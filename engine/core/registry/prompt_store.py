@@ -6,8 +6,8 @@ over time. A prompt that consistently scores high reachability
 is a well-controlled prompt - the registry makes that visible.
 
 Storage: SQLite for the MVP, zero infrastructure, file-based,
-inspectable with any SQLite viewer. Swap for Postgres in production
-by changing _get_conn() only. Nothing else changes.
+inspectable with any SQLite viewer. We may swap for Postgres in 
+production by changing _get_conn() only. Nothing else changes.
 """
 import sqlite3
 import time

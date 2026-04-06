@@ -1,0 +1,40 @@
+services:
+
+  engine:
+    build:
+      context: ../engine
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:1.5b}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - engine_data:/app/data
+      - engine_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; print('ok')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENGINE_ADDR=engine:50051
+      - IMPRIMER_API_KEY=${IMPRIMER_API_KEY:-}
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  engine_data:
+  engine_logs:

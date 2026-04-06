@@ -130,22 +130,24 @@ curl "http://localhost:8080/best?task=summarize"
 
 ## 🗺️ Roadmap
 
-**Phase 1 — Optimization**
+**Phase 1 - Optimization**
 
 * Prompt optimizer (`/optimize`) — Bayesian search
 * Task-specific scoring weights
 
-**Phase 2 — Observability**
+**Phase 2 - Observability**
 
 * Prometheus metrics (`/metrics`)
 * LLM-based evaluation
 
-**Phase 3 — Intelligence**
+**Phase 3 - Intelligence**
 
-* LoRA escalation when control plateaus
-* Multi-agent prompt graphs
+- Multi-agent prompt optimization via LangGraph (generator, evaluator, optimizer loops)
+- Stateful prompt refinement and adaptive control workflows
+- LoRA escalation when controllability plateaus
+- Transition from A/B testing to graph-based optimization pipelines
 
-**Phase 4 — Scale**
+**Phase 4 - Scale**
 
 * PostgreSQL backend
 * Auth integration (JWT)

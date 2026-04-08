@@ -1,3 +1,6 @@
+<!Badges>
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
 # Imprimer
 
 > *"To imprint a mental pattern."*

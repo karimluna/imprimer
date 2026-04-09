@@ -40,5 +40,5 @@ func (c *PythonClient) Best(ctx context.Context, req *gen.BestRequest) (*gen.Bes
 }
 
 func (c *PythonClient) Optimize(ctx context.Context, req *gen.OptimizeRequest) (*gen.OptimizeResponse, error) {
-	return c.stub.OptimizedPrompt(ctx, req)
+	return c.stub.OptimizePrompt(ctx, req)
 }

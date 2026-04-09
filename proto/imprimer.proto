@@ -7,7 +7,7 @@ option go_package = "github.com/BalorLC3/Imprimer/gateway/gen";
 service PromptEngine { // Go calls into Python for this service
     rpc EvaluatePrompt  (EvaluateRequest) returns (EvaluateResponse);
     rpc BestVariant     (BestRequest)     returns (BestResponse);
-    rpc OptimizedPrompt (OptimizeRequest) returns (OptimizeResponse);
+    rpc OptimizePrompt  (OptimizeRequest) returns (OptimizeResponse);
 };
 
 // From Go -> Python

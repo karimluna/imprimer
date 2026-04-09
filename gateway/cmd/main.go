@@ -31,10 +31,12 @@ func main() {
 
 	promptHandler := handler.NewPromptHandler(engineClient)
 	bestHandler := handler.NewBestHandler(engineClient)
+	optimizeHandler := handler.NewOptimizeHandler(engineClient)
 
 	mux := http.NewServeMux()
 	mux.Handle("/prompt", middleware.Auth(middleware.Audit(promptHandler)))
 	mux.Handle("/best", middleware.Auth(middleware.Audit(bestHandler)))
+	mux.Handle("/optimize", middleware.Auth(middleware.Audit(optimizeHandler)))
 
 	log.Printf("Imprimer gateway listening on :8080 (engine at %s)", engineAddr)
 	log.Fatal(http.ListenAndServe(":8080", mux))

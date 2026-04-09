@@ -152,6 +152,8 @@ class PromptEngineServicer(imprimer_pb2_grpc.PromptEngineServicer):
             found=True,
         )
 
+    def Optimization(): ...
+
 
 def serve():
     init_db()

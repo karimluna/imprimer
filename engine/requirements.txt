@@ -7,4 +7,4 @@ grpcio==1.80.0
 grpcio-tools==1.80.0
 protobuf>6.31.1
 requests>=2.32.0
-ray[default]==2.54.1
+optuna>=4.2.0

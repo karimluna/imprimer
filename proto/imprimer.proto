@@ -54,10 +54,15 @@ message OptimizeRequest {
   string input_example   = 3;
   string expected_output = 4;
   int32  n_trials        = 5;
+  string backend         = 6;
 }
 
 message OptimizeResponse {
-  string best_prompt = 1;
-  float  best_score  = 2;
-  int32  trials      = 3;
+  string best_prompt          = 1;
+  float  best_score           = 2;
+  float  best_reachability    = 3;
+  float  baseline_score       = 4;
+  float  baseline_reachability = 5;
+  float  improvement          = 6;
+  int32  trials_run           = 7;
 }

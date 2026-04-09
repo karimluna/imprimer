@@ -1,5 +1,7 @@
 '''
 Bayesian search with https://docs.ray.io/en
+
+By the time makes pure random permutations until it finds a solution.
 '''
 from core.chains.prompt_chain import run_variant
 from utils.create_logger import get_logger

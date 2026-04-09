@@ -12,6 +12,7 @@ import imprimer_pb2_grpc
 from core.chains.prompt_chain import run_variant, ModelBackend
 from core.evaluator.scorer import score
 from core.registry.prompt_store import init_db, save, EvalRecord, best_variant_for_task
+from core.optimize.bayesian_search import optimize
 
 from observability.tracer import log_eval, EvalTrace, reachability_gap_report
 from security.injection_guard import scan_request, InjectionDetected
@@ -152,7 +153,46 @@ class PromptEngineServicer(imprimer_pb2_grpc.PromptEngineServicer):
             found=True,
         )
 
-    def Optimization(): ...
+    def OptimizePrompt(self, request, context): 
+        logger.info(
+            f"trace-optimize "
+            f"task={request.task}"
+            f"n_trials={request.n_trials}"
+        )
+
+        backend_str = request.backend.lower() if request.backend else "ollama"
+        
+        try:
+            backend = ModelBackend(backend_str)
+        except ValueError:
+            logger.warning(
+                f"trace={request.trace_id} "
+                f"unknown backend '{backend_str}', falling back to ollama"
+            )
+            backend = ModelBackend.OLLAMA
+
+        n_trials = request.n_trials if request.n_trials > 0 else 20
+
+        result = optimize(
+            task=request.task,
+            base_prompt=request.base_prompt,
+            input_example=request.input_example,
+            expected_output=request.expected_output,
+            n_trials=n_trials,
+            backend=backend,
+            storage=None,
+            study_name=None
+        )
+
+        return imprimer_pb2.OptimizeResponse(
+            best_prompt=result.best_prompt,
+            best_score=result.best_score,
+            best_reachability=result.best_reachability,
+            baseline_score=result.baseline_score,
+            improvement=result.improvement,
+            trials_run=result.trials_run,
+        )
+            
 
 
 def serve():

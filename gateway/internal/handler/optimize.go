@@ -24,12 +24,17 @@ type optimizeRequest struct {
 	InputExample   string `json:"input_example"`
 	ExpectedOutput string `json:"expected_output"`
 	NTrials        int32  `json:"n_trials"`
+	Backend        string `json:"backend"` // "ollama" or "openai"
 }
 
 type optimizeResponse struct {
-	BestPrompt string  `json:"best_prompt"`
-	BestScore  float32 `json:"best_score"`
-	Trials     int32   `json:"trials"`
+	BestPrompt           string  `json:"best_prompt"`
+	BestScore            float32 `json:"best_score"`
+	BestReachability     float32 `json:"best_reachability"`
+	BaselineScore        float32 `json:"baseline_score"`
+	BaselineReachability float32 `json:"baseline_reachability"`
+	Improvement          float32 `json:"improvement"`
+	TrialsRun            int32   `json:"trials_run"`
 }
 
 func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,15 +48,18 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate all fields and NTrials being strictly positive and more than zero
 	if req.Task == "" ||
 		req.BasePrompt == "" ||
 		req.InputExample == "" ||
 		req.ExpectedOutput == "" ||
 		req.NTrials <= 0 {
-
-		httpx.WriteError(w, http.StatusBadRequest, "all fields must be filled")
+		httpx.WriteError(w, http.StatusBadRequest, "all fields must be filled and n_trials must be > 0")
 		return
+	}
+
+	// Default backend to ollama if not specified
+	if req.Backend == "" {
+		req.Backend = "ollama"
 	}
 
 	grpcResp, err := h.engine.Optimize(r.Context(), &gen.OptimizeRequest{
@@ -60,19 +68,20 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		InputExample:   req.InputExample,
 		ExpectedOutput: req.ExpectedOutput,
 		NTrials:        req.NTrials,
+		Backend:        req.Backend,
 	})
-
 	if err != nil {
 		http.Error(w, "engine error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp := optimizeResponse{
-		BestPrompt: grpcResp.BestPrompt,
-		BestScore:  grpcResp.BestScore,
-		Trials:     grpcResp.Trials,
-	}
-
-	// serialize
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, optimizeResponse{
+		BestPrompt:           grpcResp.BestPrompt,
+		BestScore:            grpcResp.BestScore,
+		BestReachability:     grpcResp.BestReachability,
+		BaselineScore:        grpcResp.BaselineScore,
+		BaselineReachability: grpcResp.BaselineReachability,
+		Improvement:          grpcResp.Improvement,
+		TrialsRun:            grpcResp.TrialsRun,
+	})
 }

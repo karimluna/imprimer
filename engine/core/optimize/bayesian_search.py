@@ -14,11 +14,17 @@ of the output distribution toward target behavior, measured by reachability
 and similarity.
 '''
 import optuna
+import uuid
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from core.chains.prompt_chain import run_variant, ModelBackend
 from core.evaluator.scorer import score as compute_score
+from core.registry.prompt_store import (
+    OptimizationTrialRecord,
+    save_optimization_trial,
+    mark_best_optimization_trial,
+)
 from utils.create_logger import get_logger
 
 logger = get_logger(__name__)
@@ -87,6 +93,7 @@ def optimize(
               Recommended minimum: 10. Sweet spot: 20-30.
     """
     history = []
+    run_id = uuid.uuid4().hex
 
     # Baseline. Score the original prompt before any mutation.
     # This is the control: if optimization finds nothing better,
@@ -151,6 +158,23 @@ def optimize(
             "latency_ms": result.latency_ms,
         })
 
+        save_optimization_trial(
+            record=OptimizationTrialRecord(
+                run_id=run_id,
+                task=task,
+                backend=backend.value,
+                base_prompt=base_prompt,
+                candidate_prompt=candidate,
+                mutation=mutation_key,
+                trial_number=trial.number,
+                score=combined,
+                reachability=s.reachability,
+                similarity=sim,
+                latency_ms=result.latency_ms,
+                is_best=False,
+            )
+        )
+
         logger.info(
             f"trial={trial.number} "
             f"mutation={mutation_key} "
@@ -181,6 +205,8 @@ def optimize(
     best_trial = study.best_trial
     best_prompt = best_trial.user_attrs.get("prompt", base_prompt)
     best_reachability = best_trial.user_attrs.get("reachability", 0.0)
+
+    mark_best_optimization_trial(run_id=run_id, trial_number=best_trial.number)
 
     improvement = round(best_trial.value - baseline_score, 4)
 

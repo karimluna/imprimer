@@ -62,6 +62,32 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_trace
             ON evaluations(trace_id)
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS optimization_trials (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id          TEXT NOT NULL,
+                task            TEXT NOT NULL,
+                backend         TEXT NOT NULL,
+                base_prompt     TEXT NOT NULL,
+                candidate_prompt TEXT NOT NULL,
+                mutation        TEXT NOT NULL,
+                trial_number    INTEGER NOT NULL,
+                score           REAL NOT NULL,
+                reachability    REAL NOT NULL,
+                similarity      REAL NOT NULL,
+                latency_ms      REAL NOT NULL,
+                is_best         INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_optimization_run
+            ON optimization_trials(run_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_optimization_task
+            ON optimization_trials(task)
+        """)
     logger.info("Prompt registry initialized")
 
 
@@ -116,6 +142,57 @@ def save(record: EvalRecord) -> int:
         f"reachability_b={record.reachability_b}"
     )
     return row_id
+
+
+@dataclass
+class OptimizationTrialRecord:
+    run_id: str
+    task: str
+    backend: str
+    base_prompt: str
+    candidate_prompt: str
+    mutation: str
+    trial_number: int
+    score: float
+    reachability: float
+    similarity: float
+    latency_ms: float
+    is_best: bool = False
+
+
+def save_optimization_trial(record: OptimizationTrialRecord) -> int:
+    """
+    Persists one trial from the optimizer run.
+    Returns the row ID for reference.
+    """
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _get_conn() as conn:
+        cursor = conn.execute("""
+            INSERT INTO optimization_trials (
+                run_id, task, backend,
+                base_prompt, candidate_prompt, mutation,
+                trial_number, score, reachability,
+                similarity, latency_ms, is_best,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            record.run_id, record.task, record.backend,
+            record.base_prompt, record.candidate_prompt, record.mutation,
+            record.trial_number, record.score, record.reachability,
+            record.similarity, record.latency_ms,
+            int(record.is_best), created_at,
+        ))
+        return cursor.lastrowid
+
+
+def mark_best_optimization_trial(run_id: str, trial_number: int) -> None:
+    """Marks the chosen best trial in the optimizer run."""
+    with _get_conn() as conn:
+        conn.execute("""
+            UPDATE optimization_trials
+            SET is_best = 1
+            WHERE run_id = ? AND trial_number = ?
+        """, (run_id, trial_number))
 
 
 def best_variant_for_task(task: str, limit: int = 10) -> dict:

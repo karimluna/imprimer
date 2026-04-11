@@ -37,6 +37,7 @@ func main() {
 	mux.Handle("/prompt", middleware.Auth(middleware.Audit(promptHandler)))
 	mux.Handle("/best", middleware.Auth(middleware.Audit(bestHandler)))
 	mux.Handle("/optimize", middleware.Auth(middleware.Audit(optimizeHandler)))
+	mux.Handle("/metrics", handler.MetricsHandler()) // Expose Prometheus metrics at /metrics
 
 	log.Printf("Imprimer gateway listening on :8080 (engine at %s)", engineAddr)
 	log.Fatal(http.ListenAndServe(":8080", mux))

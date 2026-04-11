@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 
 	gen "github.com/BalorLC3/Imprimer/gateway/gen"
@@ -17,7 +18,7 @@ type promptRequest struct {
 	VariantA string `json:"variant_a"`
 	VariantB string `json:"variant_b"`
 	Backend  string `json:"backend"`
-	UseJudge bool   `json:"use_judge"`
+	UseJudge bool   `json:"use_judge"` // Flag is only used for judge-enabled evaluations
 }
 
 // promptResponse is what Imprimer returns, winner and evidence
@@ -80,6 +81,10 @@ func (h *PromptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "engine error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Record evaluation metrics for this task.
+	winnerScore := math.Max(float64(grpcResp.ScoreA), float64(grpcResp.ScoreB))
+	RecordEvaluationMetrics(req.Task, winnerScore, winnerScore, req.UseJudge)
 
 	resp := promptResponse{
 		TraceID:  grpcResp.TraceId,

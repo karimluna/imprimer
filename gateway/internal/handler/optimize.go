@@ -24,7 +24,7 @@ type optimizeRequest struct {
 	InputExample   string `json:"input_example"`
 	ExpectedOutput string `json:"expected_output"`
 	NTrials        int32  `json:"n_trials"`
-	Backend        string `json:"backend"` // "ollama" or "openai"
+	Backend        string `json:"backend"` // "ollama" or "openai" add more later ...
 	UseJudge       bool   `json:"use_judge"`
 }
 
@@ -76,6 +76,9 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "engine error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// prometheus metrics for optimization improvement
+	RecordOptimizationImprovement(req.Task, float64(grpcResp.Improvement))
 
 	httpx.WriteJSON(w, http.StatusOK, optimizeResponse{
 		BestPrompt:           grpcResp.BestPrompt,

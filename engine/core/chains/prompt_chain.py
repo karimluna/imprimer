@@ -24,7 +24,7 @@ class VariantResult:
 def _build_openai_llm():
     from langchain_openai import ChatOpenAI
     return ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=os.getenv("OPENAI_MODEL"),
         temperature=0,
         logprobs=True,
         top_logprobs=5,

@@ -1,6 +1,10 @@
 <!Badges>
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
+<div style="text-align: center;">
+<img src="docs/assets/llmcontrol.drawio.png" alt="Control in prompt engineering" ppx=>   
+</div>
+
 # Imprimer
 
 > *"To imprint a mental pattern."*

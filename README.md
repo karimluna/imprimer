@@ -31,26 +31,78 @@ Given a task and two prompt variants, Imprimer asks: which prompt gives you more
 Every evaluation is persisted. Over time, the system learns which prompts control each task most effectively and surfaces that knowledge through the `best` command and `/best` endpoint.
 
 
+
+
+
+
 ## Theoretical foundation
 
-The LLM defines a stochastic dynamical system over token sequences. A prompt acts as a **control input** $u$ that steers the trajectory of generation toward a desired output region.
+The LLM defines a stochastic dynamical system over token sequences. A prompt acts as a **control input** $u$ that steers the generation trajectory toward a desired output $y^*$.
 
-For each generated token, Imprimer measures how much probability mass concentrates on the chosen output relative to its local alternatives:
+Following the intuition of reachability from control theory, the key question is:
 
-$$p = \exp(\text{logprob}) \qquad \text{total} = \sum_{i=1}^{5} \exp(\text{lp}_i) \qquad \text{certainty} = \frac{p}{\text{total}}$$
+> *Can the model produce the desired output without fighting its own prior distribution?*
 
-The **Reachability Index** is the average certainy across all output tokens:
 
-| Score | Meaning |
-|---|---|
-| `1.0` | _Deterministic_: the prompt leaves the model no uncertainty |
-| `~0.65–0.69` | Observed on `qwen2.5:1.5b` with default prompts |
-| `0.97` | Paper's theoretical upper bound for prompts ≤ 10 tokens |
-| `~0.2` | _Weak control_: five tokens equally likely at each position |
+### Token-level reachability
 
-The gap between your prompt's reachability and `0.97` is the optimization target. In the next diagram $u$ is what steers behavior.
+For each generated token, we evaluate whether it lies within the model’s **high-probability region**.
+
+Let $\ell = \text{logprob}$ of the chosen token. We define a soft reachability score using a sigmoid centered at a probability threshold:
+
+$$
+r = \sigma\big(\alpha (\ell - \tau)\big)
+$$
+
+Where:
+
+* $\tau = \log(0.1)$ → token must have ≥ 10% probability to be considered “naturally reachable”
+* $\alpha$ → controls how sharply we separate reachable vs unreachable tokens
+
+This means that if $r \approx 1 \rightarrow$ token lies in a high probability region (token is unlikely) and $r \approx 0 \rightarrow$ token is unlikely (prompt is forcing the model).
+
+
+
+### Sequence-level reachability
+
+The **Reachability Index** is the average over all tokens:
+
+$$
+R = \frac{1}{T} \sum_{t=1}^{T} r_t
+$$
+
+
+### Interpretation
+
+| Score      | Meaning                                                          |
+| ---------- | ---------------------------------------------------------------- |
+| `~1.0`     | Output follows the model’s natural trajectory (highly reachable) |
+| `~0.6–0.8` | Good alignment between prompt and model prior                    |
+| `~0.3–0.5` | Partial control, prompt is fighting the model                    |
+| `<0.3`     | Output is largely unnatural for the model                        |
+
+
+### Connection to theory
+
+In the reachability framework (Bhargava et al.), a target $y^*$ is reachable if the prompt has enough **control capacity** to overcome the model’s default trajectory. In practice, we cannot directly measure the geometric condition:
+
+$$
+|y^\perp| \leq k \cdot \gamma
+$$
+
+So we approximate it empirically:
+
+* If the model assigns **high probability** to the generated tokens  $\rightarrow y^*$ lies within the reachable region
+* If the model assigns **low probability** $\rightarrow $ the prompt is exceeding its control budget
+
+
+
+### Optimization objective
+
+Given a task $x_0$, Imprimer optimizes prompts $u$ to maximize semantic alignment with $y^*$ while ensuring the generated outputs remain within the model’s high-probability (reachable) region.
+
 <p align="center">
-  <img src="docs/assets/llmcontrol.drawio.png" height="220" alt="LLMs control framework">
+  <img src="docs/assets/llmcontrol.drawio.png" height="240" alt="LLMs control framework">
 </p>
 
 ## Architecture 

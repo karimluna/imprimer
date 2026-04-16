@@ -10,6 +10,16 @@ The outer loop (reachability threshold) is managed by this graph.
 Together they implement a two-level control hierarchy:
   - Inner: find the best mutation in this cycle (Optuna)
   - Outer: decide if the result is good enough to stop (LangGraph)
+
+State invariant
+---------------
+base_prompt    : never mutated after init. Always the raw task instruction.
+                 The generator reads this to prevent decorator accumulation
+                 across graph cycles.
+current_prompt : the decorated candidate produced by the generator in the
+                 current cycle. Read by the evaluator, overwritten each cycle.
+best_prompt    : the highest-scoring decorated prompt seen so far.
+                 Returned to the caller at the end.
 """
 
 from langgraph.graph import StateGraph, END
@@ -29,7 +39,7 @@ logger = get_logger(__name__)
 
 
 def _build_graph() -> StateGraph:
-    """"Builds the LangGraph optimization graph. Just called once."""
+    """Builds the LangGraph optimization graph. Just called once."""
     graph = StateGraph(PromptState)
 
     graph.add_node("generator", generator_node)
@@ -42,7 +52,7 @@ def _build_graph() -> StateGraph:
 
     # Conditional edge after controller
     graph.add_conditional_edges(
-        "controller", 
+        "controller",
         should_continue,
         {
             "generator": "generator",
@@ -54,7 +64,6 @@ def _build_graph() -> StateGraph:
     return graph.compile()
 
 _graph = _build_graph()
-
 
 
 def optimize(
@@ -84,7 +93,6 @@ def optimize(
                     Optuna trials, so total LLM calls = n_trials × iterations.
                     Default 3 = up to 60 calls with n_trials=20.
     """
-
     backend_str = backend.value
 
     # Establish baseline before graph runs
@@ -95,7 +103,13 @@ def optimize(
         backend=backend,
     )
 
-    baseline_score_obj = compute_score(baseline_result)
+    baseline_score_obj = compute_score(
+        result=baseline_result,
+        task=task,
+        input_text=input_example,
+        use_judge=use_judge,
+        backend=backend
+    )
     baseline_score = baseline_score_obj.combined
     baseline_reachability = baseline_score_obj.reachability
 
@@ -115,6 +129,11 @@ def optimize(
         "target_reachability": target_reachability,
         "max_iterations": max_iterations,
         "n_trials": n_trials,
+        # base_prompt is the immutable anchor — the generator always
+        # reads this so build_prompt never wraps an already-decorated prompt.
+        "base_prompt": base_prompt,
+        # current_prompt starts as base; will be overwritten by generator
+        # with the decorated candidate each cycle.
         "current_prompt": base_prompt,
         "current_iteration": 0,
         "best_prompt": base_prompt,
@@ -134,7 +153,7 @@ def optimize(
     )
 
     iterations_completed = final_state.get("current_iteration", 0)
-    
+
     logger.info(
         f"graph complete "
         f"iterations={iterations_completed} "

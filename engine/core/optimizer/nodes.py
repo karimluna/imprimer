@@ -21,16 +21,20 @@ def generator_node(state: PromptState) -> dict:
     """
     Runs one optimization cycle over the mutation space.
 
-    Takes the current best prompt as the base and searches for a mutation
-    that improves reachability + similarity. Returns the best candidate
-    found in this cycle.
-    """    
+    Always optimizes from base_prompt (the original raw task instruction),
+    never from current_prompt. This prevents the decorator layers added by
+    build_prompt from being re-wrapped on every graph cycle, which would
+    cause persona/constraints to accumulate across iterations.
+
+    The best candidate found is stored in current_prompt for the evaluator,
+    but base_prompt is never mutated.
+    """
     iteration = state["current_iteration"]
-    base = state["current_prompt"]
+    base = state["base_prompt"]  # always the raw instruction, never decorated
 
     logger.info(
-      f"generator iteration = {iteration}"
-      f"base_prompt = {base[:60]}"
+        f"generator iteration={iteration} "
+        f"base_prompt={base[:60]}"
     )
 
     backend = ModelBackend(state["backend"])
@@ -43,8 +47,10 @@ def generator_node(state: PromptState) -> dict:
         n_trials=state["n_trials"],
         backend=backend,
         # Pass study name so Optuna resumes across graph cycles —
-        # earlier trials from previous cycles inform this one
-        study_name=f"imprimer_{state['task']}_iter{iteration}",
+        # earlier trials from previous cycles inform this one.
+        # Note: same study name across iterations is intentional —
+        # TPE learns from all previous trials, not just this cycle's.
+        study_name=f"imprimer_{state['task']}",
     )
 
     logger.info(
@@ -60,6 +66,7 @@ def generator_node(state: PromptState) -> dict:
     ]
 
     return {
+        # current_prompt carries the decorated candidate to the evaluator
         "current_prompt": result.best_prompt,
         "history": state["history"] + cycle_history,
     }
@@ -74,7 +81,7 @@ def evaluator_node(state: PromptState) -> dict:
       - LLM-as-judge score (if use_judge=True)
 
     If neither condition is met, increments the iteration counter
-    and returns control to the generator for another cycle. THis is
+    and returns control to the generator for another cycle. This is
     to prevent the control's loop to run indefinitely.
     """
     backend = ModelBackend(state["backend"])
@@ -123,7 +130,6 @@ def controller_node(state: PromptState) -> dict:
     Termination conditions (either triggers exit):
       1. best_reachability >= target_reachability (target met)
       2. current_iteration >= max_iterations (iteration cap hit)
-
     """
     iteration = state["current_iteration"]
     best_reach = state["best_reachability"]

@@ -12,7 +12,7 @@ import imprimer_pb2_grpc
 from core.chains.prompt_chain import run_variant, ModelBackend
 from core.evaluator.scorer import score
 from core.registry.prompt_store import init_db, save, EvalRecord, best_variant_for_task
-from core.optimize.bayesian_search import optimize
+from core.optimizer.bayesian_search import optimize
 
 from observability.tracer import log_eval, EvalTrace, reachability_gap_report
 from security.injection_guard import scan_request, InjectionDetected

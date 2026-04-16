@@ -116,6 +116,37 @@ def evaluator_node(state: PromptState) -> dict:
     return {}
 
 
+def controller_node(state: PromptState) -> dict:
+    """
+    Controller, decides whether to continue or terminate.
+
+    Termination conditions (either triggers exit):
+      1. best_reachability >= target_reachability (target met)
+      2. current_iteration >= max_iterations (iteration cap hit)
+
+    """
+    iteration = state["current_iteration"]
+    best_reach = state["best_reachability"]
+    target = state["target_reachability"]
+    max_iter = state["max_iterations"]
+
+    target_reached = best_reach >= target
+    cap_reached = iteration >= max_iter - 1
+
+    logger.info(
+        f"controller iteration={iteration}/{max_iter} "
+        f"reachability={best_reach:.4f}/{target:.4f} "
+        f"target_reached={target_reached} "
+        f"cap_reached={cap_reached}"
+    )
+
+    return {
+        "current_iteration": iteration + 1,
+        "target_reached": target_reached,
+        "iterations_completed": iteration + 1,
+    }
+
+
 def should_continue(state: PromptState) -> str:
     """
     Conditional edge function, is called after controller_node

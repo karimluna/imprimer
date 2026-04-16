@@ -12,7 +12,7 @@ Together they implement a two-level control hierarchy:
   - Outer: decide if the result is good enough to stop (LangGraph)
 """
 
-from langgraph import StateGraph, END
+from langgraph.graph import StateGraph, END
 
 from core.optimizer.state import PromptState
 from core.optimizer.nodes import (
@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 def _build_graph() -> StateGraph:
     """"Builds the LangGraph optimization graph. Just called once."""
-    graph = StateGraph()
+    graph = StateGraph(PromptState)
 
     graph.add_node("generator", generator_node)
     graph.add_node("evaluator", evaluator_node)

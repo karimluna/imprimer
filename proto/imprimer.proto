@@ -69,6 +69,6 @@ message OptimizeResponse {
   float  baseline_reachability = 5;
   float  improvement          = 6; // gap
   int32  trials_run           = 7; // how many trials we actually ran
-  int32  itrations_completed  = 8; // how many graph cycles ran
+  int32  iterations_completed  = 8; // how many graph cycles ran
   bool   target_reached       = 9; // did we hit reachability target?
 }

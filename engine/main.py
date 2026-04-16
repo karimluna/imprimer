@@ -13,6 +13,7 @@ from core.chains.prompt_chain import run_variant, ModelBackend
 from core.evaluator.scorer import score
 from core.registry.prompt_store import init_db, save, EvalRecord, best_variant_for_task
 from core.optimizer.bayesian_search import optimize
+from core.optimizer.graph import optimize as graph_optimize
 
 from observability.tracer import log_eval, EvalTrace, reachability_gap_report
 from security.injection_guard import scan_request, InjectionDetected
@@ -155,9 +156,11 @@ class PromptEngineServicer(imprimer_pb2_grpc.PromptEngineServicer):
 
     def OptimizePrompt(self, request, context): 
         logger.info(
-            f"trace-optimize "
-            f"task={request.task}"
-            f"n_trials={request.n_trials}"
+            f"optimize task={request.task} "
+            f"n_trials={request.n_trials} "
+            f"max_iterations={request.max_iterations} "
+            f"target_reachability={request.target_reachability} "
+            f"use_judge={request.use_judge}"
         )
 
         backend_str = request.backend.lower() if request.backend else "ollama"
@@ -173,26 +176,28 @@ class PromptEngineServicer(imprimer_pb2_grpc.PromptEngineServicer):
             backend = ModelBackend.OLLAMA
 
         # Go already raises BadRequest if n_trials is not greater than zero but just in case
-        n_trials = request.n_trials if request.n_trials > 0 else 20
-
-        result = optimize(
+        result = graph_optimize(
             task=request.task,
             base_prompt=request.base_prompt,
             input_example=request.input_example,
             expected_output=request.expected_output,
-            n_trials=n_trials,
+            n_trials=request.n_trials if request.n_trials > 0 else 20,
             backend=backend,
-            storage=None,
-            study_name=None
+            use_judge=request.use_judge,
+            target_reachability=request.target_reachability or 0.80,
+            max_iterations=request.max_iterations if request.max_iterations > 0 else 3,
         )
 
         return imprimer_pb2.OptimizeResponse(
-            best_prompt=result.best_prompt,
-            best_score=result.best_score,
-            best_reachability=result.best_reachability,
-            baseline_score=result.baseline_score,
-            improvement=result.improvement,
-            trials_run=result.trials_run,
+            best_prompt=result["best_prompt"],
+            best_score=result["best_score"],
+            best_reachability=result["best_reachability"],
+            baseline_score=result["baseline_score"],
+            baseline_reachability=result["baseline_reachability"],
+            improvement=result["improvement"],
+            trials_run=result["trials_run"],
+            iterations_completed=result["iterations_completed"],
+            target_reached=result["target_reached"],
         )
             
 

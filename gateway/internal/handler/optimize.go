@@ -19,13 +19,15 @@ func NewOptimizeHandler(engine *client.PythonClient) *OptimizeHandler {
 
 // same pattern as to encode later
 type optimizeRequest struct {
-	Task           string `json:"task"`
-	BasePrompt     string `json:"base_prompt"`
-	InputExample   string `json:"input_example"`
-	ExpectedOutput string `json:"expected_output"`
-	NTrials        int32  `json:"n_trials"`
-	Backend        string `json:"backend"` // "ollama" or "openai" add more later ...
-	UseJudge       bool   `json:"use_judge"`
+	Task               string  `json:"task"`
+	BasePrompt         string  `json:"base_prompt"`
+	InputExample       string  `json:"input_example"`
+	ExpectedOutput     string  `json:"expected_output"`
+	NTrials            int32   `json:"n_trials"`
+	Backend            string  `json:"backend"` // e.g. "ollama", "openai", "groq", etc.
+	UseJudge           bool    `json:"use_judge"`
+	TargetReachability float32 `json:"target_reachability"`
+	MaxIterations      int32   `json:"max_iterations"`
 }
 
 type optimizeResponse struct {
@@ -36,6 +38,8 @@ type optimizeResponse struct {
 	BaselineReachability float32 `json:"baseline_reachability"`
 	Improvement          float32 `json:"improvement"`
 	TrialsRun            int32   `json:"trials_run"`
+	IterationsCompleted  int32   `json:"iterations_completed"`
+	TargetReached        bool    `json:"target_reached"`
 }
 
 func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -64,13 +68,15 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grpcResp, err := h.engine.Optimize(r.Context(), &gen.OptimizeRequest{
-		Task:           req.Task,
-		BasePrompt:     req.BasePrompt,
-		InputExample:   req.InputExample,
-		ExpectedOutput: req.ExpectedOutput,
-		NTrials:        req.NTrials,
-		Backend:        req.Backend,
-		UseJudge:       req.UseJudge,
+		Task:               req.Task,
+		BasePrompt:         req.BasePrompt,
+		InputExample:       req.InputExample,
+		ExpectedOutput:     req.ExpectedOutput,
+		NTrials:            req.NTrials,
+		Backend:            req.Backend,
+		UseJudge:           req.UseJudge,
+		TargetReachability: req.TargetReachability,
+		MaxIterations:      req.MaxIterations,
 	})
 	if err != nil {
 		http.Error(w, "engine error: "+err.Error(), http.StatusInternalServerError)
@@ -88,5 +94,7 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		BaselineReachability: grpcResp.BaselineReachability,
 		Improvement:          grpcResp.Improvement,
 		TrialsRun:            grpcResp.TrialsRun,
+		IterationsCompleted:  grpcResp.IterationsCompleted,
+		TargetReached:        grpcResp.TargetReached,
 	})
 }

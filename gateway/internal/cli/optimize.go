@@ -8,13 +8,15 @@ import (
 )
 
 type optimizePayload struct {
-	Task           string `json:"task"`
-	BasePrompt     string `json:"base_prompt"`
-	InputExample   string `json:"input_example"`
-	ExpectedOutput string `json:"expected_output"`
-	NTrials        int32  `json:"n_trials"`
-	Backend        string `json:"backend"`
-	UseJudge       bool   `json:"use_judge"`
+	Task               string  `json:"task"`
+	BasePrompt         string  `json:"base_prompt"`
+	InputExample       string  `json:"input_example"`
+	ExpectedOutput     string  `json:"expected_output"`
+	NTrials            int32   `json:"n_trials"`
+	Backend            string  `json:"backend"`
+	UseJudge           bool    `json:"use_judge"`
+	TargetReachability float32 `json:"target_reachability"`
+	MaxIterations      int32   `json:"max_iterations"`
 }
 
 type optimizeResult struct {
@@ -25,6 +27,8 @@ type optimizeResult struct {
 	BaselineReachability float32 `json:"baseline_reachability"`
 	Improvement          float32 `json:"improvement"`
 	TrialsRun            int32   `json:"trials_run"`
+	IterationsCompleted  int32   `json:"iterations_completed"`
+	TargetReached        bool    `json:"target_reached"`
 }
 
 var optimizeCmd = &cobra.Command{
@@ -49,6 +53,8 @@ typically converges within 8-10 trials after the initial random exploration.`,
 		trials, _ := cmd.Flags().GetInt32("trials")
 		backend, _ := cmd.Flags().GetString("backend")
 		useJudge, _ := cmd.Flags().GetBool("judge")
+		targetReach, _ := cmd.Flags().GetFloat32("target-reachability")
+		maxIterations, _ := cmd.Flags().GetInt32("max-iterations")
 
 		if task == "" || prompt == "" || input == "" || expected == "" {
 			return fmt.Errorf("--task, --prompt, --input, and --expected are all required")
@@ -64,13 +70,15 @@ typically converges within 8-10 trials after the initial random exploration.`,
 
 		var result optimizeResult
 		if err := c.post("/optimize", optimizePayload{
-			Task:           task,
-			BasePrompt:     prompt,
-			InputExample:   input,
-			ExpectedOutput: expected,
-			NTrials:        trials,
-			Backend:        backend,
-			UseJudge:       useJudge,
+			Task:               task,
+			BasePrompt:         prompt,
+			InputExample:       input,
+			ExpectedOutput:     expected,
+			NTrials:            trials,
+			Backend:            backend,
+			UseJudge:           useJudge,
+			TargetReachability: targetReach,
+			MaxIterations:      maxIterations,
 		}, &result); err != nil {
 			return err
 		}
@@ -86,7 +94,9 @@ typically converges within 8-10 trials after the initial random exploration.`,
 		if result.Improvement < 0 {
 			sign = ""
 		}
-		fmt.Printf("  Trials run          %d\n", result.TrialsRun)
+		fmt.Printf("  Trials run          %d (across %d iterations)\n",
+			result.TrialsRun, result.IterationsCompleted)
+		fmt.Printf("  Target reached      %v\n", result.TargetReached)
 		fmt.Printf("  Baseline score      %.4f  (reachability %.4f)\n",
 			result.BaselineScore, result.BaselineReachability)
 		fmt.Printf("  Best score          %.4f  (reachability %.4f)\n",
@@ -106,6 +116,10 @@ func init() {
 	optimizeCmd.Flags().Int32("trials", 20, "Number of optimization trials")
 	optimizeCmd.Flags().String("backend", "ollama", "Model backend: ollama or openai")
 	optimizeCmd.Flags().Bool("judge", false, "Enable LLM-as-judge scoring during optimization")
+	optimizeCmd.Flags().Float32("target-reachability", 0.80,
+		"Stop when reachability >= this value (paper ceiling: 0.97)")
+	optimizeCmd.Flags().Int32("max-iterations", 3,
+		"Max graph cycles (total LLM calls = trials × iterations)")
 
 	RootCmd.AddCommand(optimizeCmd)
 }

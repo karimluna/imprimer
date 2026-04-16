@@ -206,7 +206,7 @@ protoc -I proto \
 - OWASP Top 10 for LLM Applications · [owasp.org](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 
 ## Still in Developmetn
-User interface is going to be like TensorBoard but is still in development so `imprimer ui` does not exist yet. Also there was a small problem with the integration of the Generator in LangGraph so this feature was reverted to fix the problem.
+User interface is going to be like TensorBoard but is still in development so `imprimer ui` does not exist yet. Fine-tuning layer can be added after we ensure that graph and bayesian optimization plateaus for complex tasks.
 
 ## License
 

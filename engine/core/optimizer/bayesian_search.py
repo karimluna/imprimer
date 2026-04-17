@@ -198,7 +198,7 @@ class NounMutator:
 class ModalityMutator:
     """
     Shifts the surface mood of the instruction without changing its intent.
-
+    Example: 
     imperative   : "Summarize the document."
     directive    : "Your task is to summarize the document."
     interrogative: "Could you summarize the document."

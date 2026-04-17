@@ -32,9 +32,6 @@ Every evaluation is persisted. Over time, the system learns which prompts contro
 
 
 
-
-
-
 ## Theoretical foundation
 
 The LLM defines a stochastic dynamical system over token sequences. A prompt acts as a **control input** $u$ that steers the generation trajectory toward a desired output $y^*$.
@@ -107,7 +104,7 @@ Given a task $x_0$, Imprimer optimizes prompts $u$ to maximize semantic alignmen
 
 ## Architecture 
 
-Imprimer is two services connected by a gRPC contract. The proto file is the single source of truth, so in that way Go and python never share code, only the contract. The following diagram provides a high level visualization of the information flow in the platform, the orchestator cycle integrates the **reflective agent** pattern. The reflection (evaluation) node analyzes outputs and returns feedback as HumanMessage, creating the improvement loop.
+Imprimer is two services connected by a gRPC contract. The proto file is the single source of truth, so in that way Go and python never share code, only the contract. The following diagram provides a high level visualization of the information flow in the platform, the orchestator cycle integrates the **reflective agent** pattern. The reflection (evaluation) node analyzes outputs and returns a feedback sigal, creating the improvement loop.
 
 <p align="center">
   <img src="docs/assets/show-arch.drawio.png" height="350" alt="LLMs control framework">

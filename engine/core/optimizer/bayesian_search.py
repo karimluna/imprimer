@@ -433,11 +433,10 @@ def optimize(
             backend=backend,
         )
         s   = compute_score(result=result, baseline_result=baseline_result, task=task, input_text=input_example, expected_output=expected_output)
-        com = s.combined
         sim = s.similarity
+        combined = s.combined
 
-        # 50% semantic similarity + 50% (reachability + latency) composite, with a stronger penalty on reachability than latency. 
-        combined = 0.5 * sim + 0.5 * com # here s carries llm-based quality and reachability signals
+
 
         mut_label = (
             f"dim={dimension}"

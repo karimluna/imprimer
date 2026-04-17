@@ -42,3 +42,7 @@ func (c *PythonClient) Best(ctx context.Context, req *gen.BestRequest) (*gen.Bes
 func (c *PythonClient) Optimize(ctx context.Context, req *gen.OptimizeRequest) (*gen.OptimizeResponse, error) {
 	return c.stub.OptimizePrompt(ctx, req)
 }
+
+func (c *PythonClient) Analyze(ctx context.Context, req *gen.StabilityRequest) (*gen.StabilityResponse, error) {
+	return c.stub.AnalyzeStability(ctx, req)
+}

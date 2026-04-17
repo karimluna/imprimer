@@ -5,9 +5,10 @@ package imprimer;
 option go_package = "github.com/BalorLC3/Imprimer/gateway/gen";
 
 service PromptEngine { // Go calls into Python for this service
-    rpc EvaluatePrompt  (EvaluateRequest) returns (EvaluateResponse);
-    rpc BestVariant     (BestRequest)     returns (BestResponse);
-    rpc OptimizePrompt  (OptimizeRequest) returns (OptimizeResponse);
+    rpc EvaluatePrompt   (EvaluateRequest)  returns (EvaluateResponse);
+    rpc BestVariant      (BestRequest)      returns (BestResponse);
+    rpc OptimizePrompt   (OptimizeRequest)  returns (OptimizeResponse);
+    rpc AnalyzeStability (StabilityRequest) returns (StabilityResponse);
 };
 
 // From Go -> Python
@@ -71,4 +72,32 @@ message OptimizeResponse {
   int32  trials_run           = 7; // how many trials we actually ran
   int32  iterations_completed  = 8; // how many graph cycles ran
   bool   target_reached       = 9; // did we hit reachability target?
+}
+
+
+message StabilityRequest {
+  string trace_id    = 1;
+  string prompt      = 2;
+  string input       = 3;
+  string task        = 4;
+  string backend     = 5;
+  int32  n_runs      = 6;
+  float  temperature = 7;
+}
+
+message TokenConfidence {
+  string token     = 1;
+  float  logprob   = 2;
+  float  certainty = 3;
+}
+
+
+message StabilityResponse {
+  string              trace_id         = 1;
+  repeated string     outputs          = 2;
+  float               avg_reachability = 3;
+  float               variance         = 4;
+  float               avg_similarity   = 5;
+  float               stability_score  = 6;
+  repeated TokenConfidence token_confidence = 7;
 }

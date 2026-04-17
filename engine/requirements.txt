@@ -8,3 +8,5 @@ grpcio-tools==1.80.0
 protobuf>6.31.1
 requests>=2.32.0
 optuna>=4.2.0
+spacy>=3.8.14
+sentence-transformers>=5.4.1

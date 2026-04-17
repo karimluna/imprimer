@@ -64,8 +64,13 @@ def _run_ollama(prompt_text: str) -> VariantResult:
     so the scorer receives identical input regardless of backend.
     """
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_MODEL")
+    model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 
+    if not model:
+        raise RuntimeError(
+            "OLLAMA_MODEL is not configured. Set OLLAMA_MODEL to a loaded model "
+            "such as 'qwen2.5:1.5b'."
+        )
 
     payload = {
         "model": model,

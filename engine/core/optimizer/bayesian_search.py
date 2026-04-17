@@ -35,9 +35,9 @@ import spacy
 from dataclasses import dataclass, field
 from typing import Literal
 
-from sentence_transformers import SentenceTransformer, util as st_util
 
 from core.chains.prompt_chain import run_variant, ModelBackend
+from core.evaluator.scorer import _similarity
 from core.evaluator.scorer import score as compute_score
 from core.registry.prompt_store import (
     OptimizationTrialRecord,
@@ -57,8 +57,7 @@ except OSError:
     download("en_core_web_sm")
     _nlp = spacy.load("en_core_web_sm")
 
-# all-MiniLM-L6-v2: 80MB, CPU-friendly, ~5ms per pair.
-_embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
 
 # Literal type for the dimension parameter
 Dimension = Literal["verb", "noun", "modality"]
@@ -324,18 +323,6 @@ class OptimizationResult:
     history: list = field(default_factory=list)
 
 
-def _similarity(output: str, expected: str) -> float:
-    """
-    Cosine similarity between sentence embeddings.
-    """
-    if not output.strip() or not expected.strip():
-        return 0.0
-    emb_out = _embedder.encode(output,   convert_to_tensor=True)
-    emb_exp = _embedder.encode(expected, convert_to_tensor=True)
-    score   = st_util.cos_sim(emb_out, emb_exp).item()
-    return round(max(0.0, score), 4)
-
-
 def optimize(
     task: str,
     base_prompt: str,
@@ -445,11 +432,12 @@ def optimize(
             task=task,
             backend=backend,
         )
-        s   = compute_score(result)
-        sim = _similarity(result.text, expected_output)
+        s   = compute_score(result=result, baseline_result=baseline_result, task=task, input_text=input_example, expected_output=expected_output)
+        com = s.combined
+        sim = s.similarity
 
-        # 50% semantic similarity + 50% reachability
-        combined = 0.4 * sim + 0.6 * s.combined # here s.combined carries llm-based quality and reachability signals
+        # 50% semantic similarity + 50% (reachability + latency) composite, with a stronger penalty on reachability than latency. 
+        combined = 0.5 * sim + 0.5 * com # here s carries llm-based quality and reachability signals
 
         mut_label = (
             f"dim={dimension}"

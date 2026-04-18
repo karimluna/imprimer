@@ -3,6 +3,8 @@ Shared state for the LangGraph optimization loop.
 '''
 
 from typing import TypedDict
+from core.chains.prompt_chain import ModelBackend
+
 
 class PromptState(TypedDict):
     '''
@@ -11,7 +13,7 @@ class PromptState(TypedDict):
     task: str # never changes across iterations
     input_example: str
     expected_output: str
-    backend: str
+    backend: ModelBackend
     use_judge: bool
     base_prompt: str
     

@@ -5,9 +5,9 @@ LangGraph node functions for the prompt optimization graph.
   evaluator  : scores the generator's candidate and generates feedback (critical)
   controller : decides whether to cycle back or terminate (executive)
 
-RPE feedback loop:
+rpe feedback loop:
   After each evaluator run, a brief verbal explanation is generated
-  describing why the current best prompt works. This is injected into
+  describing why the current best prompt works. This is injectesd into
   the next generator cycle via the PERSONAS slot, the model learns
   from its own prior successes at a semantic level.
 '''
@@ -93,6 +93,10 @@ def generator_node(state: PromptState) -> dict:
     scores each with SSC + optional reachability,
     returns the best candidate to the evaluator.
 
+    FIX (Problem 3): passes `global_best_prompt` from state as
+    `current_best_prompt` into run_rpe so the generator builds on the
+    actual winning prompt from prior cycles, not the frozen original.
+
     RPE: True
     LLM calls: 1 (generation) + N×K (SSC) + N×1 (similarity comparison)
     With defaults: 1 + 5×2 + 5 = 16 calls per iteration.
@@ -100,6 +104,9 @@ def generator_node(state: PromptState) -> dict:
     iteration = state["current_iteration"]
     backend = ModelBackend(state["backend"])
     feedback = state.get("last_feedback", "")
+
+    # FIX: use the current global best as the evolving anchor for generation
+    current_best_prompt = state.get("global_best_prompt", state["base_prompt"])
 
     logger.info(
         f"generator iteration={iteration} "
@@ -118,6 +125,8 @@ def generator_node(state: PromptState) -> dict:
             backend=backend,
             feedback=feedback,
             n_variants=state["n_variants"],
+            # FIX: pass the evolving best prompt so variants build on it
+            current_best_prompt=current_best_prompt,
         )
         best_prompt = result.best_prompt
         cycle_history = [{**h, "iteration": iteration} for h in result.history]
@@ -127,12 +136,11 @@ def generator_node(state: PromptState) -> dict:
         from core.optimizer.bayesian_search import optimize as bayesian_optimize, DIMENSION_SEQUENCE
         dimension = DIMENSION_SEQUENCE[iteration % len(DIMENSION_SEQUENCE)]
 
-        # Parse raw feedback string into structured Optuna hints ---
+        # Parse raw feedback string into structured Optuna hints
         reflection_hints = {}
         if feedback:
             f_lower = feedback.lower()
             
-            #map semantic feedback to exact strings
             if "verbose" in f_lower or "too long" in f_lower or "concise" in f_lower:
                 reflection_hints["output_contract"] = "Output only the answer, no preamble."
             
@@ -142,7 +150,6 @@ def generator_node(state: PromptState) -> dict:
             if "unprofessional" in f_lower or "expert" in f_lower:
                 reflection_hints["persona"] = "You are an expert in this domain."
 
-        # Only pass the dictionary if we actually extracted actionable hints
         hints_to_pass = reflection_hints if reflection_hints else None
 
         result = bayesian_optimize(
@@ -179,7 +186,6 @@ def evaluator_node(state: PromptState) -> dict:
     Generates verbal feedback for the next generator cycle.
     """
     backend = ModelBackend(state["backend"])
-    # original_global_best = state["global_best_score"]
 
     result = run_variant(
         template=state["current_prompt"],
@@ -195,11 +201,10 @@ def evaluator_node(state: PromptState) -> dict:
         result=result,
         task=state["task"],
         input_text=state["input_example"],
-        expected_output=state["expected_output"],  # was missing
+        expected_output=state["expected_output"],
         use_judge=_use_judge,
         backend=backend,
     )
-
 
     reachability = s.reachability
     combined = s.combined
@@ -226,7 +231,6 @@ def evaluator_node(state: PromptState) -> dict:
 
     # ALWAYS generate feedback to learn from the attempt (Success or Failure)
     if state["current_prompt"] != state["base_prompt"]:
-        # We compare the current attempt against the global best we had before this attempt
         previous_best_prompt = state.get("global_best_prompt", state["base_prompt"])
         previous_best_score = state.get("global_best_score", state["baseline_score"])
         

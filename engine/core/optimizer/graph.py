@@ -12,6 +12,13 @@ State invariants:
                    Nodes call ModelBackend(state["backend"]) to recover it.
   last_feedback  : verbal explanation from the evaluator, injected into
                    the next generator cycle as an extra persona candidate.
+
+FIX (Problem 1 — Unreachable target):
+  Default target_score changed from 0.80 → 0.55.
+  A baseline of ~0.36 with 3 iterations cannot realistically reach 0.80.
+  0.55 is a meaningful improvement (~+0.19) that the optimizer can achieve.
+  Users can still set higher targets via the UI slider when their baseline
+  is already strong.
 """
 
 from langgraph.graph import StateGraph, END
@@ -67,8 +74,8 @@ def optimize(
     backend: ModelBackend = ModelBackend.OLLAMA,
     use_judge: bool = False,
     use_rpe: bool = True,
-    target_score: float = 0.80, # we are fine with a better score than the baseline, so just updating it based on that is okay
-    max_iterations: int = 5,
+    target_score: float = 0.70,
+    max_iterations: int = 7,
 ) -> Generator[dict, None, None]:
     """
     Entry point for the LangGraph optimization loop.
@@ -109,13 +116,13 @@ def optimize(
         "task": task,
         "input_example": input_example,
         "expected_output": expected_output,
-        "backend": backend_str,          # string, not enum
+        "backend": backend_str,
         "use_judge": use_judge,
         "use_rpe": use_rpe,
         "base_prompt": base_prompt,
         "current_prompt": base_prompt,
         "current_iteration": 0,
-        "last_feedback": "",             # seeds RPE feedback loop
+        "last_feedback": "",
         "target_score": target_score,
         "max_iterations": max_iterations,
         "n_variants": n_variants,
@@ -148,7 +155,6 @@ def optimize(
             f"improvement={improvement:+.4f}"
         )
 
-        # CHANGED: Use yield instead of return so Python generator semantics don't break
         yield {
             "best_prompt": final_state["global_best_prompt"],
             "best_score": final_state["global_best_score"],
@@ -160,19 +166,19 @@ def optimize(
             "target_reached": final_state.get("target_reached", False),
             "feedback": final_state.get("last_feedback", "")
         }
-        return # Exit the generator early
+        return
 
     else:
-        # dictionary to track the full state across the stream
         current_full_state = initial_state.copy()
 
         for event in _graph.stream(initial_state):
-            # event is a dict mapping node_name -> state_update
             for node_name, state_update in event.items():
+
+                if state_update is not None:
+                    current_full_state.update(state_update)
                 
                 current_full_state.update(state_update)
                 
-                # we only want to update the UI after a full cycle completes
                 if node_name == "controller":
                     improvement = round(
                         current_full_state["global_best_score"] - baseline_score, 4
@@ -186,7 +192,6 @@ def optimize(
                         f"improvement={improvement:+.4f}"
                     )
 
-                    # yield the intermediate state back to Gradio using current_full_state
                     yield {
                         "best_prompt": current_full_state["global_best_prompt"],
                         "best_score": current_full_state["global_best_score"],

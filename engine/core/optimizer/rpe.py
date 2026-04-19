@@ -8,11 +8,16 @@ variant prompts based on the current best and verbal feedback from prior rounds.
 Semantic Self-Consistency (SSC): Run the same prompt K times at temperature > 0.
                                  Average pairwise semantic similarity of the K outputs.
                                  High SSC -> prompt reliably steers the model to similar outputs.
-                                 Los SSC -> model is uncertain, prompt leaves too much
-                                 chance.
+                                 Low SSC -> model is uncertain, prompt leaves too much to chance.
 ---                                 
-Here reachability is an optional metric. When the backend supports logprbs 
+Here reachability is an optional metric. When the backend supports logprobs 
 (e.g., ollama and openai). Mostly logprobs are unavailable, so SSC is more stable. 
+
+FIX (Problem 3 — Generator base drift):
+  run_rpe now accepts `current_best_prompt` in addition to `base_prompt`.
+  Variant generation always builds on top of the CURRENT best prompt from the
+  graph state, not the frozen original base_prompt. This closes the feedback
+  loop that was causing every iteration to restart from scratch.
 """
 
 import json
@@ -42,7 +47,7 @@ N_VARIANTS = 5
 class RPEResult:
     best_prompt: str
     best_score: float
-    best_reachability: float # 0.5 neutral when logprobs unavailable
+    best_reachability: float  # 0.5 neutral when logprobs unavailable
     history: list = field(default_factory=list)
 
 
@@ -51,21 +56,34 @@ def _generate_variants(
     feedback: str,
     n_variants: int,
     backend: ModelBackend,
-    task: str
+    task: str,
+    # FIX: current_best_prompt is the evolving anchor, distinct from the frozen base_prompt
+    current_best_prompt: Optional[str] = None,
 ) -> list[str]:
     """
-    Verbalized sampling, asks the LLM to generate N improved prompt variants.
-    The LLM receives the current best prompt and verbal feedback from the
-    previous iteration. t generates variants by reasoning about what would
-    make the instruction clearer, more specific, or better structured.
+    Verbalized sampling — asks the LLM to generate N improved prompt variants.
+
+    The LLM receives the CURRENT BEST prompt (not the frozen original) and
+    verbal feedback from the previous iteration. This ensures each RPE cycle
+    genuinely builds on prior gains rather than restarting from scratch.
+
+    FIX: uses `current_best_prompt` as the generation anchor when provided.
 
     returns: list of variant strings 
     """
-    feedback_section = f"\nCRITICAL FEEDBACK FROM PREVIOUS ROUND:\n{feedback}\n\nYou MUST fix the issues mentioned in the feedback above." if feedback else ""
+    # Use the evolving best prompt as the anchor, fall back to base_prompt
+    anchor_prompt = current_best_prompt if current_best_prompt else base_prompt
+
+    feedback_section = (
+        f"\nCRITICAL FEEDBACK FROM PREVIOUS ROUND:\n{feedback}\n\n"
+        f"You MUST fix the issues mentioned in the feedback above."
+        if feedback else ""
+    )
+    example_array_str = "[" + ", ".join([f'"variant {i+1}"' for i in range(n_variants)]) + "]"
     generation_prompt = f"""You are a prompt engineering expert. Your task is to improve the following instruction prompt.
     
-    Current prompt:
-    {base_prompt}
+    Current best prompt:
+    {anchor_prompt}
     {feedback_section}
     
     Generate exactly {n_variants} improved variants of this prompt for the task: {task}.
@@ -76,8 +94,8 @@ def _generate_variants(
     - Use {{{{input}}}} as the placeholder for user input (keep it exactly as-is).
     - Do not add explanations, just the variants.
 
-    Respond with ONLY a JSON array of strings with exactly a number {n_variants} of variants, no markdown:
-    ["variant 1", "variant 2",..., "variant n"]"""
+    Respond with ONLY a JSON array of strings containing exactly {n_variants} variants, no markdown:
+    {example_array_str}"""
     
     raw = ""
     try:
@@ -122,7 +140,7 @@ def _generate_variants(
         match = re.search(r'\[.*\]', cleaned, re.DOTALL)
         if match:
             variants = json.loads(match.group())
-            # Validate: must be non-empty strings containing {input}
+            # Validate: must be non-empty strings
             valid = [
                 v for v in variants
                 if isinstance(v, str) and v.strip() 
@@ -130,11 +148,16 @@ def _generate_variants(
             if valid:
                 logger.info(f"generated {len(valid)} valid variants")
                 return valid[:n_variants]
+        else:
+            logger.warning(
+                f"variant generation failed to output an array. Raw output: {raw[:60]}... "
+                f"using current best prompt"
+            )
 
     except Exception as e:
-        logger.warning(f"variant generation failed: {e} — using base prompt")
+        logger.warning(f"variant generation failed: {e}, using current best prompt")
 
-    return [base_prompt]
+    return [anchor_prompt]
 
 def _compute_ssc(
         prompt: str,
@@ -149,7 +172,7 @@ def _compute_ssc(
     computes average pairwise semantic similarity. Also returns the average 
     reachability if logprobs are available.
 
-    returns (ssc_score, avg_reachability)
+    returns (ssc_score, avg_reachability, sample_output)
     avg_reachability is 0.5 (neutral) when logprobs unavailable.
     """
     from langchain_core.prompts import PromptTemplate
@@ -243,7 +266,7 @@ def _compute_ssc(
             logger.warning(f"SSC run failed: {e}")
 
     if not outputs:
-        return 0.0, 0.5
+        return 0.0, 0.5, ""
 
     sample_output = outputs[0] if outputs else "" 
 
@@ -262,7 +285,8 @@ def run_rpe(
     feedback: str = "",
     n_variants: int = N_VARIANTS,
     ssc_runs: int = SSC_RUNS,
-    weights: Optional[dict] = None
+    weights: Optional[dict] = None,
+    current_best_prompt: Optional[str] = None,
 ) -> RPEResult:
     
     if weights is None:
@@ -274,8 +298,12 @@ def run_rpe(
             else:
                 # DETERMINISTIC TASKS (extract, classify, summarize): 
                 # Prioritize getting the right answer (Sim) against the expected_output.
-                weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
-                logger.info("Using deterministic weights (prioritizing Similarity)")
+                if expected_output:
+                    weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
+                    logger.info("Using deterministic weights (prioritizing Similarity)")
+                else:
+                    weights = {"ssc": 0.4, "reach": 0.4, "sim": 0.2}
+                    logger.info("Using deterministic weights without reference (SSC+Reachability)")
             
     from core.evaluator.embedder import similarity as semantic_sim
 
@@ -286,25 +314,24 @@ def run_rpe(
         f"backend={backend.value}"
     )
 
-    # 1 call generates all N variants
+    # 1 call generates all N variants — from the CURRENT BEST, not frozen base
     variants = _generate_variants(
         base_prompt=base_prompt,
         feedback=feedback,
         n_variants=n_variants,
         backend=backend,
         task=task,
+        current_best_prompt=current_best_prompt,  # FIX: evolving anchor
     )
 
     history = []
-    best_prompt = base_prompt
+    best_prompt = current_best_prompt if current_best_prompt else base_prompt
     best_score = -1.0
     best_reachability = 0.5
 
     for i, variant in enumerate(variants):
         # K calls per variant: SSC scoring
         # sample_output reused for similarity: no extra call needed
-
-
         ssc, reach, sample_output = _compute_ssc(
             prompt=variant,
             input_example=input_example,
@@ -319,6 +346,9 @@ def run_rpe(
         elif task and expected_output:
             sim = semantic_sim(output=sample_output, expected=expected_output)
         else:
+            # FIX (Problem 2): no expected_output → neutral 0.5, not 0.0
+            # This prevents the similarity dimension from dragging down every
+            # score to near-zero when the user leaves the reference field blank.
             sim = 0.5
 
         combined = (

@@ -61,21 +61,23 @@ def _generate_variants(
 
     returns: list of variant strings 
     """
-    feedback_section = f"\nFeedback from last round: {feedback}\n" if feedback else ""
+    feedback_section = f"\nCRITICAL FEEDBACK FROM PREVIOUS ROUND:\n{feedback}\n\nYou MUST fix the issues mentioned in the feedback above." if feedback else ""
     generation_prompt = f"""You are a prompt engineering expert. Your task is to improve the following instruction prompt.
+    
     Current prompt:
-{base_prompt}
-{feedback_section}
-Generate exactly {n_variants} improved variants of this prompt for the task: {task}.
+    {base_prompt}
+    {feedback_section}
+    
+    Generate exactly {n_variants} improved variants of this prompt for the task: {task}.
 
-Rules:
-- Each variant must be a complete, standalone instruction
-- Vary the structure, framing, and specificity across variants
-- Use {{{{input}}}} as the placeholder for user input (keep it exactly as-is)
-- Do not add explanations, just the variants
+    Rules:
+    - Each variant must be a complete, standalone instruction.
+    - Vary the structure and framing, but explicitly address the feedback provided.
+    - Use {{{{input}}}} as the placeholder for user input (keep it exactly as-is).
+    - Do not add explanations, just the variants.
 
-Respond with ONLY a JSON array of strings, no markdown:
-["variant 1", "variant 2", "variant 3", "variant 4", "variant 5"]"""
+    Respond with ONLY a JSON array of strings with exactly a number {n_variants} of variants, no markdown:
+    ["variant 1", "variant 2",..., "variant n"]"""
     
     raw = ""
     try:
@@ -262,9 +264,19 @@ def run_rpe(
     ssc_runs: int = SSC_RUNS,
     weights: Optional[dict] = None
 ) -> RPEResult:
+    
     if weights is None:
-        weights = {"ssc":0.5, "reach": 0.3, "sim":0.2}
-        
+            if task in OPEN_ENDED_TASKS:
+                # CREATIVE TASKS: No exact right answer. 
+                # Prioritize consistency (SSC) and control (Reachability).
+                weights = {"ssc": 0.5, "reach": 0.3, "sim": 0.2}
+                logger.info("Using creative weights (prioritizing SSC)")
+            else:
+                # DETERMINISTIC TASKS (extract, classify, summarize): 
+                # Prioritize getting the right answer (Sim) against the expected_output.
+                weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
+                logger.info("Using deterministic weights (prioritizing Similarity)")
+            
     from core.evaluator.embedder import similarity as semantic_sim
 
     logger.info(

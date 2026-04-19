@@ -29,6 +29,7 @@ class StabilityResult:
     avg_similarity: float
     stability_score: float
     token_confidence: list[TokenConfidence]  # from the first run
+    recommendation: str = ""
 
 
 def _run_with_temperature(
@@ -151,18 +152,6 @@ def analyze(
 ) -> StabilityResult:
     """
     Runs the prompt N times and measures output stability.
-
-    temperature should be > 0 to introduce meaningful variance.
-    At temperature=0 all runs are deterministic and variance=0 always.
-    Recommended: 0.5-0.9 for meaningful stability measurement.
-
-    The stability score combines three signals:
-      avg_reachability - how controlled is the output distribution?
-      avg_similarity   - how consistent are the actual outputs?
-      variance         - how much does reachability fluctuate across runs?
-
-    A prompt with high stability is reliable in production.
-    A prompt with low stability needs optimization before deployment.
     """
     full_prompt = f"Your task is {task}\n:{prompt}\n\nInput: {input_text}" if input_text else prompt
 
@@ -175,15 +164,6 @@ def analyze(
         reachability = _compute_reachability(logprobs)
 
         outputs.append(text)
-
-        if len(outputs) >= 2:
-            sim = _pairwise_similarity(outputs)
-            # early stopping
-            if sim > 0.85:
-                break  # already stable
-            if sim < 0.3:
-                break  # clearly unstable
-
         reachabilities.append(reachability)
         all_logprobs.append(logprobs)
 
@@ -226,6 +206,13 @@ def analyze(
                 certainty=certainty,
             ))
 
+    if stability_score >= 0.80:
+        recommendation = "🟢 Prompt is highly stable. Behavior is constrained and ready for production."
+    elif stability_score >= 0.60:
+        recommendation = "🟡 Prompt is moderately stable. Consider running an optimization cycle to tighten the constraints."
+    else:
+        recommendation = "🔴 Prompt is unstable. High risk of drift or hallucination. Optimization is strongly recommended."
+
     logger.info(
         f"stability complete "
         f"avg_reachability={avg_reachability:.4f} "
@@ -241,4 +228,5 @@ def analyze(
         avg_similarity=avg_similarity,
         stability_score=stability_score,
         token_confidence=token_confidence,
+        recommendation=recommendation, # Make sure your StabilityResult dataclass expects this field!
     )

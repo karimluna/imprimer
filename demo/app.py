@@ -4,6 +4,7 @@ Three-panel interface: Input, Analysis and Optimization
 
 import os
 import sys
+import html
 
 # SSL workaround for certain environments
 ssl_cert_file = os.environ.get("SSL_CERT_FILE")
@@ -38,34 +39,123 @@ TASK_CATEGORIES = [
 ]
 
 BACKEND_ID = ModelBackend.OLLAMA # harcoded backend for dev and demo
-
 BEST_PROMPT = []
 
+
+CUSTOM_CSS = """
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f8f9fa;
+  --color-border-primary: #e5e7eb;
+  --color-border-secondary: #e5e7eb;
+  --color-border-tertiary: #f3f4f6;
+  --color-text-primary: #111827;
+  --color-text-secondary: #374151;
+  --color-text-tertiary: #6b7280;
+  --border-radius-md: 8px;
+}
+
+.section-label { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; margin-top: 16px; }
+
+.metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 1rem; }
+.metric { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; border: 1px solid var(--color-border-tertiary); }
+.metric .label { font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px; }
+.metric .value { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+.metric .delta { font-size: 11px; margin-top: 2px; }
+.delta.pos { color: #1D9E75; }
+.delta.neg { color: #D85A30; }
+
+.timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 1rem; }
+.iter-row { display: grid; grid-template-columns: 80px 1fr 70px 70px; gap: 8px; align-items: center; padding: 8px 12px; border-radius: var(--border-radius-md); font-size: 12px; border: 1px solid var(--color-border-tertiary); background: var(--color-background-primary); }
+.iter-row .iter-label { color: var(--color-text-secondary); font-weight: 500; }
+.bar-wrap { background: var(--color-background-secondary); border-radius: 4px; height: 6px; position: relative; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; background: #1D9E75; transition: width 0.4s ease; }
+.bar-fill.base { background: #888780; }
+.score-val { text-align: right; font-weight: 500; font-size: 12px; }
+.score-val.improved { color: #1D9E75; }
+.iter-row.running { border-color: #FAC775; background: #FAEEDA22; }
+.iter-row.done { border-color: var(--color-border-tertiary); }
+.iter-row.pending { opacity: 0.5; }
+.spin { display: inline-block; animation: spin 1s linear infinite; font-size: 12px; margin-left: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.prompt-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+.prompt-box { border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; font-size: 13px; background: var(--color-background-primary); }
+.prompt-box .box-label { font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.prompt-box .text { color: var(--color-text-secondary); line-height: 1.5; white-space: pre-wrap; }
+.prompt-box.best .box-label { color: #1D9E75; }
+.prompt-box.best { border-color: #5DCAA5; background: #f0fdf455; }
+
+.feedback-card { border-left: 4px solid #5DCAA5; padding: 12px; background: #E1F5EE55; border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; margin-bottom: 1rem; font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; }
+.feedback-card .fb-label { font-size: 10px; font-weight: 600; color: #0F6E56; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+
+.run-list { display: flex; flex-direction: column; gap: 8px; }
+details.run-item { border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); overflow: hidden; background: var(--color-background-primary); }
+details.run-item > summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 500; list-style: none; }
+details.run-item > summary::-webkit-details-marker { display: none; }
+.run-header .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.run-header .dot.done { background: #1D9E75; }
+.run-header .run-score { margin-left: auto; font-weight: 600; color: #1D9E75; }
+.run-body { padding: 0px 12px 12px; border-top: 1px solid transparent; font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; white-space: pre-wrap; }
+details.run-item[open] > summary { border-bottom: 1px solid var(--color-border-tertiary); margin-bottom: 8px; }
+
+.token-strip { display: flex; flex-wrap: wrap; gap: 4px; padding: 12px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); margin-top: 8px; }
+.tok { font-size: 12px; font-family: monospace; padding: 2px 6px; border-radius: 4px; border-bottom: 2px solid transparent; }
+
+.status-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--border-radius-md); font-size: 13px; font-weight: 500; margin-bottom: 1rem; border: 1px solid var(--color-border-tertiary); background: var(--color-background-secondary); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #EF9F27; animation: pulse 1s ease-in-out infinite; flex-shrink: 0; }
+.status-dot.done { background: #1D9E75; animation: none; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+"""
+
 def _render_token_confidence(token_confidence: list) -> str:
-    """
-    Renders token-level confidence as colored HTML spans.
-    """
+    """Renders token-level confidence using the new HTML styles."""
     if not token_confidence:
         return "<p>No token confidence data available.</p>"
 
-    html = "<p style='font-family: monospace; font-size: 14px; line-height: 2;'>"
+    html_str = '<div class="token-strip">'
     for tc in token_confidence:
         certainty = tc.get("certainty", 0.5)
-        r = int(255 * (1 - certainty))
-        g = int(255 * certainty)
-        b = 0
-        color = f"rgb({r},{g},{b})"
+        r = int(216 if certainty < 0.5 else 29)
+        g = int(90 if certainty < 0.5 else 158)
+        b = int(48 if certainty < 0.5 else 117)
+        color = f"#{r:02x}{g:02x}{b:02x}"
         bg = f"rgba({r},{g},{b},0.15)"
-        token = tc.get("token", "").replace("<", "&lt;").replace(">", "&gt;")
+        
+        token = html.escape(tc.get("token", ""))
         logprob = tc.get("logprob", 0)
-        html += (
-            f'<span title="certainty={certainty:.3f} logprob={logprob:.3f}" '
-            f'style="background:{bg};border-bottom:2px solid {color};'
-            f'padding:1px 2px;margin:1px;border-radius:2px;">'
-            f'{token}</span>'
+        html_str += (
+            f'<span class="tok" title="certainty={certainty:.3f} logprob={logprob:.3f}" '
+            f'style="background:{bg};border-color:{color};">{token}</span>'
         )
-    html += "</p>"
-    return html
+    html_str += "</div>"
+    return html_str
+
+def build_status_bar(text, is_done=False):
+    dot_class = "done" if is_done else ""
+    return f"""
+    <div class="status-bar">
+        <div class="status-dot {dot_class}"></div>
+        <span>{html.escape(text)}</span>
+    </div>
+    """
+
+def build_metric_html(label, value, delta=None, is_target=False):
+    delta_html = ""
+    if delta is not None and not is_target:
+        cls = "pos" if delta > 0 else "neg"
+        sign = "+" if delta > 0 else ""
+        delta_html = f'<div class="delta {cls}">{sign}{delta:.3f}</div>'
+    
+    val_str = f"{value:.3f}" if isinstance(value, float) else str(value)
+    return f"""
+    <div class="metric">
+      <div class="label">{html.escape(label)}</div>
+      <div class="value">{val_str}</div>
+      {delta_html}
+    </div>
+    """
+
 
 def run_optimization(
     prompt, input_text, task, model_id, hf_token,
@@ -73,23 +163,34 @@ def run_optimization(
 ):
     global BEST_PROMPT
     if not prompt or not task:
-        yield "Prompt, task, and expected output are required.", None, None, None
+        yield "<div class='feedback-card'>Prompt, task, and expected output are required.</div>", "", "", "", ""
         return
 
-    # Dynamically inject the UI variables into the environment for the backend
+    # Backend environment setup
     if BACKEND_ID == ModelBackend.HUGGINGFACE:
-        if model_id:
-            os.environ["HF_MODEL_ID"] = model_id
-        if hf_token:
-            os.environ["HF_TOKEN"] = hf_token
+        if model_id: os.environ["HF_MODEL_ID"] = model_id
+        if hf_token: os.environ["HF_TOKEN"] = hf_token
     elif BACKEND_ID == ModelBackend.OLLAMA:
-        if model_id:
-            os.environ["OLLAMA_MODEL"] = model_id
+        if model_id: os.environ["OLLAMA_MODEL"] = model_id
 
-    initial_status = "⏳ **Optimization running...** (Evaluating variations, please wait)"
-    initial_prompt_comparison = f"**Original:**\n{prompt}\n\n---\n\n**Optimized:**\n*⏳ Optimization in progress...*"
-    initial_feedback = "⏳ *Waiting for AI judge to generate initial reflection...*"
-    yield initial_status, None, initial_prompt_comparison, initial_feedback
+    # INITIAL UI STATE
+    status_html = build_status_bar("Initializing optimization graph...", is_done=False)
+    metrics_html = f"""<div class="metric-row">
+        {build_metric_html("Baseline", "---")}
+        {build_metric_html("Best so far", "---")}
+        {build_metric_html("Target", target_score)}
+        {build_metric_html("Cycles", f"0 / {max_iterations}")}
+    </div>"""
+    
+    prompt_html = f"""<div class="prompt-compare">
+        <div class="prompt-box"><div class="box-label">Original</div><div class="text">{html.escape(prompt)}</div></div>
+        <div class="prompt-box best"><div class="box-label">Optimized</div><div class="text">⏳ Waiting for first cycle...</div></div>
+    </div>"""
+    
+    timeline_html = "<div class='timeline'><div class='iter-row running'><span class='iter-label'>Cycle 1 <span class='spin'>↻</span></span><div class='bar-wrap'><div class='bar-fill base' style='width:0%'></div></div><span class='score-val'>—</span><span class='score-val'>—</span></div></div>"
+    feedback_html = "<div class='feedback-card'>⏳ Waiting for AI judge reflection...</div>"
+
+    yield status_html, metrics_html, timeline_html, prompt_html, feedback_html
 
     try:
         optimizer_output = run_optimize(
@@ -110,71 +211,115 @@ def run_optimization(
         if hasattr(optimizer_output, '__iter__') and not isinstance(optimizer_output, dict):
             for step_result in optimizer_output:
                 final_result = step_result
-                BEST_PROMPT.append(step_result.get('best_prompt', ''))
-                
-                # Safely pull the iteration count (graphs generally track this in state)
                 iteration = step_result.get('iterations_completed', step_result.get('current_iteration', 1))
                 
-                status_temp = f"⏳ **Optimization running...** (Cycle {iteration} of {max_iterations})"
-                
-                comparison_md = f"""
-| | Before | Best So Far |
-|---|---|---|
-| **Score** | {step_result.get('baseline_score', 0):.4f} | **{step_result.get('best_score', 0):.4f}** |
-| Improvement | | **+{step_result.get('improvement', 0):.4f}** |
-| Iterations | | {iteration} |
-"""
-                # Update visual display of the prompt
-                temp_prompt_comparison = f"**Original:**\n{prompt}\n\n---\n\n**Current Best Variant (Cycle {iteration}):**\n{step_result.get('best_prompt', '')}"
-                
-                # Fetch LangGraph's feedback from the state
-                feedback_str = step_result.get('feedback', '')
-                if feedback_str:
-                    feedback_md = f"**AI Reflection (Cycle {iteration}):**\n> {feedback_str}"
-                else:
-                    feedback_md = "⏳ *Generating new variations and scoring...*"
+                base_s = step_result.get('baseline_score', 0.0)
+                best_s = step_result.get('best_score', 0.0)
+                improv = step_result.get('improvement', 0.0)
+                curr_p = step_result.get('best_prompt', '')
+                fb_str = step_result.get('feedback', '')
+                BEST_PROMPT.append(curr_p)
 
-                yield status_temp, comparison_md, temp_prompt_comparison, feedback_md
+                # Status & Metrics
+                status_html = build_status_bar(f"Cycle {iteration} of {max_iterations} — evaluating variants...", is_done=False)
+                metrics_html = f"""<div class="metric-row">
+                    {build_metric_html("Baseline", base_s)}
+                    {build_metric_html("Best so far", best_s, delta=improv)}
+                    {build_metric_html("Target", target_score)}
+                    {build_metric_html("Cycles", f"{iteration} / {max_iterations}")}
+                </div>"""
+
+                # Timeline Construction
+                tl = '<div class="timeline">'
+                for i in range(1, int(max_iterations) + 1):
+                    if i < iteration:
+                        # Completed steps (We mock the history visualization strictly based on current progress)
+                        tl += f"""<div class="iter-row done">
+                            <span class="iter-label">Cycle {i}</span>
+                            <div class="bar-wrap"><div class="bar-fill base" style="width:{min(100, (best_s/1.0)*100)}%"></div></div>
+                            <span class="score-val">{best_s:.3f}</span><span class="score-val improved">+{improv:.3f}</span>
+                        </div>"""
+                    elif i == iteration:
+                        tl += f"""<div class="iter-row running">
+                            <span class="iter-label">Cycle {i} <span class="spin">↻</span></span>
+                            <div class="bar-wrap"><div class="bar-fill" style="width:{min(100, (best_s/1.0)*100)}%"></div></div>
+                            <span class="score-val improved">{best_s:.3f}</span><span class="score-val improved">+{improv:.3f}</span>
+                        </div>"""
+                    else:
+                        tl += f"""<div class="iter-row pending">
+                            <span class="iter-label">Cycle {i}</span>
+                            <div class="bar-wrap"><div class="bar-fill" style="width:0%"></div></div>
+                            <span class="score-val">—</span><span class="score-val">—</span>
+                        </div>"""
+                tl += '</div>'
+
+                # Prompts & Feedback
+                prompt_html = f"""<div class="prompt-compare">
+                    <div class="prompt-box"><div class="box-label">Original</div><div class="text">{html.escape(prompt)}</div></div>
+                    <div class="prompt-box best"><div class="box-label">Best so far (Cycle {iteration})</div><div class="text">{html.escape(curr_p)}</div></div>
+                </div>"""
+                
+                feedback_html = f"""<div class="feedback-card">
+                    <div class="fb-label">Cycle {iteration-1 if fb_str else iteration} Reflection</div>
+                    {html.escape(fb_str) if fb_str else "Generating new variations and scoring..."}
+                </div>"""
+
+                yield status_html, metrics_html, tl, prompt_html, feedback_html
         else:
             final_result = optimizer_output
             BEST_PROMPT.append(final_result.get('best_prompt', ''))
             
     except Exception as e:
-        yield f"Optimization Error: {str(e)}", None, initial_prompt_comparison, f"Error: {str(e)}"
+        err = f"<div class='feedback-card' style='border-color:red;'><div class='fb-label' style='color:red;'>Error</div>{html.escape(str(e))}</div>"
+        yield build_status_bar("Optimization failed", True), "", "", "", err
         return
 
-    # --- FINAL UI UPDATE ---
     result = final_result or {}
-    status = "✅ Target score reached" if result.get("target_reached") else "⏹ Iteration cap reached"
+    status_msg = "Target score reached — optimization complete" if result.get("target_reached") else "Iteration cap reached — optimization finished"
     final_iteration = result.get('iterations_completed', result.get('current_iteration', max_iterations))
+    
+    base_s = result.get('baseline_score', 0.0)
+    best_s = result.get('best_score', 0.0)
+    improv = result.get('improvement', 0.0)
 
-    comparison_md = f"""
-| | Before | After |
-|---|---|---|
-| **Score** | {result.get('baseline_score', 0):.4f} | **{result.get('best_score', 0):.4f}** |
-| Improvement | | **+{result.get('improvement', 0):.4f}** |
-| Iterations | | {final_iteration} |
-| Status | | {status} |
-"""
+    status_html = build_status_bar(status_msg, is_done=True)
+    metrics_html = f"""<div class="metric-row">
+        {build_metric_html("Baseline", base_s)}
+        {build_metric_html("Final Best", best_s, delta=improv)}
+        {build_metric_html("Target", target_score)}
+        {build_metric_html("Cycles", f"{final_iteration} / {max_iterations}")}
+    </div>"""
 
-    final_prompt_comparison = f"**Original:**\n{prompt}\n\n---\n\n**Optimized:**\n{result.get('best_prompt', 'No optimized prompt returned')}"
-    final_feedback = f"✅ **Optimization Complete**\n> {result.get('feedback', 'Target reached or maximum iterations exhausted.')}"
+    tl = '<div class="timeline">'
+    for i in range(1, int(final_iteration) + 1):
+        tl += f"""<div class="iter-row done">
+            <span class="iter-label">Cycle {i}</span>
+            <div class="bar-wrap"><div class="bar-fill" style="width:{min(100, (best_s/1.0)*100)}%"></div></div>
+            <span class="score-val">{best_s:.3f}</span><span class="score-val improved">+{improv:.3f}</span>
+        </div>"""
+    tl += '</div>'
 
-    yield status, comparison_md, final_prompt_comparison, final_feedback
+    prompt_html = f"""<div class="prompt-compare">
+        <div class="prompt-box"><div class="box-label">Original</div><div class="text">{html.escape(prompt)}</div></div>
+        <div class="prompt-box best"><div class="box-label">Final Optimized Prompt</div><div class="text">{html.escape(result.get('best_prompt', ''))}</div></div>
+    </div>"""
+
+    fb = result.get('feedback', '')
+    feedback_html = f"""<div class="feedback-card">
+        <div class="fb-label">Final Output Reflection</div>
+        {html.escape(fb) if fb else "Target reached or maximum iterations exhausted."}
+    </div>"""
+
+    yield status_html, metrics_html, tl, prompt_html, feedback_html
 
 
 def run_analysis(prompt, input_text, task, model_id, hf_token, n_runs, temperature):
 
     if not prompt or not task:
-        return (
-            "Prompt and task are required.",
-            None, None, None, None, None
-        )
+        return "<div class='feedback-card'>Prompt and task are required.</div>", "", "", "", None, None
 
-    if model_id:
-        os.environ["HF_MODEL_ID"] = model_id
-    if hf_token:
-        os.environ["HF_TOKEN"] = hf_token
+    if model_id: os.environ["HF_MODEL_ID"] = model_id
+    if hf_token: os.environ["HF_TOKEN"] = hf_token
 
     try:
         result = run_stability(
@@ -186,38 +331,50 @@ def run_analysis(prompt, input_text, task, model_id, hf_token, n_runs, temperatu
             temperature=float(temperature),
         )
     except Exception as e:
-        return f"Analysis Error: {str(e)}", None, None, None, None, None
+        err = f"<div class='feedback-card' style='border-color:red;'><div class='fb-label' style='color:red;'>Error</div>{html.escape(str(e))}</div>"
+        return build_status_bar("Analysis Failed", True), "", err, "", None, None
 
-    metrics_md = f"""
-| Metric | Value |
-|---|---|
-| Stability score | **{result.stability_score:.4f}** |
-| Avg reachability | {result.avg_reachability:.4f} |
-| Avg similarity | {result.avg_similarity:.4f} |
-| Variance | {result.variance:.6f} |
-"""
+    score = result.stability_score
+    status_msg = f"Analysis complete — {n_runs} runs, stability score {score:.3f}"
+    status_html = build_status_bar(status_msg, is_done=True)
 
-    outputs_text = ""
+    # We append the new recommendation here inside a feedback-card
+    metrics_html = f"""<div class="metric-row">
+        {build_metric_html("Stability Score", score)}
+        {build_metric_html("Avg Reachability", result.avg_reachability)}
+        {build_metric_html("Avg Similarity", result.avg_similarity)}
+        {build_metric_html("Variance", result.variance)}
+    </div>
+    <div class="feedback-card" style="margin-top: 1rem;">
+        <div class="fb-label">Analysis Recommendation</div>
+        {html.escape(getattr(result, 'recommendation', 'No recommendation provided.'))}
+    </div>
+    """
+
+    outputs_html = '<div class="run-list">'
     for i, out in enumerate(result.outputs):
-        outputs_text += f"**Run {i+1}:**\n{out}\n\n---\n\n"
+        # First item open by default
+        open_attr = "open" if i == 0 else ""
+        outputs_html += f"""
+        <details class="run-item" {open_attr}>
+            <summary class="run-header">
+                <div class="dot done"></div>
+                <span>Run {i+1}</span>
+            </summary>
+            <div class="run-body">{html.escape(out)}</div>
+        </details>
+        """
+    outputs_html += '</div>'
 
     token_html = _render_token_confidence([
         {"token": tc.token, "certainty": tc.certainty, "logprob": tc.logprob}
         for tc in result.token_confidence
     ])
 
-    score = result.stability_score
-    if score >= 0.80:
-        verdict = "🟢 **High stability** — this prompt reliably controls the model."
-    elif score >= 0.60:
-        verdict = "🟡 **Moderate stability** — consider optimizing for production use."
-    else:
-        verdict = "🔴 **Low stability** — this prompt needs optimization before deployment."
+    return status_html, metrics_html, outputs_html, token_html, result, None
 
-    return verdict, metrics_md, outputs_text, token_html, result, None
 
 def query_best(task, limit):
-    # [Same as your existing code...]
     if not task:
         return "Task is required."
     try:
@@ -234,7 +391,7 @@ def query_best(task, limit):
     except Exception as e:
         return str(e)
 
-# Gradio layout
+
 with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
 
     gr.Markdown("""
@@ -311,13 +468,17 @@ with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
                 temperature = gr.Slider(minimum=0.1, maximum=1.5, value=0.7, step=0.1, label="Temperature")
 
             analyze_btn = gr.Button("🔬 Analyze Prompt", variant="primary")
-            verdict_out = gr.Markdown()
-
-            with gr.Row():
-                metrics_out = gr.Markdown(label="Stability Metrics")
-
-            outputs_out = gr.Markdown(label="Sample Outputs")
-            token_html_out = gr.HTML(label="Token Confidence")
+            
+            # Using gr.HTML blocks mapped to the HTML UI layout
+            stab_status_out = gr.HTML()
+            stab_metrics_out = gr.HTML()
+            
+            gr.HTML('<div class="section-label">Outputs — Expand to read</div>')
+            stab_outputs_out = gr.HTML()
+            
+            gr.HTML('<div class="section-label">Token confidence — First output</div>')
+            stab_token_out = gr.HTML()
+            
             _analysis_state = gr.State()
 
             analyze_btn.click(
@@ -327,8 +488,8 @@ with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
                     model_id, hf_token, n_runs, temperature
                 ],
                 outputs=[
-                    verdict_out, metrics_out, outputs_out,
-                    token_html_out, _analysis_state, gr.Textbox(visible=False)
+                    stab_status_out, stab_metrics_out, stab_outputs_out,
+                    stab_token_out, _analysis_state, gr.Textbox(visible=False)
                 ],
             )
 
@@ -352,15 +513,20 @@ Run Reflective Prompt Optimization inside a LangGraph control loop. The LLM gene
             use_judge = gr.Checkbox(label="Enable LLM-as-judge scoring (slower, more accurate)", value=False)
             optimize_btn = gr.Button("⚡ Optimize Prompt", variant="primary")
 
-            opt_status = gr.Markdown()
+            # Mapped exactly to the HTML layout structure
+            opt_status_out = gr.HTML()
             
-            # --- Added visual feedback box for iteration UX ---
-            with gr.Row():
-                feedback_box = gr.Markdown()
+            gr.HTML('<div class="section-label">Score progress</div>')
+            opt_metrics_out = gr.HTML()
+            
+            gr.HTML('<div class="section-label">Iteration timeline</div>')
+            opt_timeline_out = gr.HTML()
 
-            with gr.Row():
-                comparison_table = gr.Markdown(label="Before vs After")
-                prompt_comparison = gr.Markdown(label="Prompt Comparison")
+            gr.HTML('<div class="section-label">Prompt comparison</div>')
+            opt_prompt_out = gr.HTML()
+
+            gr.HTML('<div class="section-label">AI reflection</div>')
+            opt_feedback_out = gr.HTML()
 
             optimize_btn.click(
                 fn=run_optimization,
@@ -368,8 +534,9 @@ Run Reflective Prompt Optimization inside a LangGraph control loop. The LLM gene
                     prompt_input, input_text, task_input, model_id, hf_token,
                     expected_output, n_variants, target_score, max_iter, use_judge
                 ],
-                # Now outputting four fields, appending feedback_box
-                outputs=[opt_status, comparison_table, prompt_comparison, feedback_box],
+                outputs=[
+                    opt_status_out, opt_metrics_out, opt_timeline_out, opt_prompt_out, opt_feedback_out
+                ],
             )
 
         # Tab 3: Registry 
@@ -408,12 +575,5 @@ if __name__ == "__main__":
         server_name="0.0.0.0", 
         server_port=7860,
         theme=gr.themes.Soft(),
-        css="""
-        .metric-box { 
-            background: #f8f9fa; 
-            border-radius: 8px; 
-            padding: 12px; 
-            margin: 4px;
-        }
-        """
+        css=CUSTOM_CSS
     )

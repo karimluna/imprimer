@@ -12,7 +12,6 @@ State invariants:
                    Nodes call ModelBackend(state["backend"]) to recover it.
   last_feedback  : verbal explanation from the evaluator, injected into
                    the next generator cycle as an extra persona candidate.
-
 """
 
 from langgraph.graph import StateGraph, END
@@ -68,11 +67,7 @@ def optimize(
     backend: ModelBackend = ModelBackend.OLLAMA,
     use_judge: bool = False,
     use_rpe: bool = True,
-    # FIX (Problem 1): default lowered from 0.80 → 0.55.
-    # Rationale: a typical baseline is 0.36–0.45. Reaching 0.80 in 3
-    # iterations is unrealistic; 0.55 is an achievable +0.1–0.19 stretch.
-    # The UI slider still lets users push higher if their baseline warrants it.
-    target_score: float = 0.70,  # reachability target; 0.6-0.8 is the good control band
+    target_score: float = 0.70, 
     max_iterations: int = 5,
 ) -> Generator[dict, None, None]:
     """
@@ -176,7 +171,6 @@ def optimize(
         for event in _graph.stream(initial_state):
             for node_name, state_update in event.items():
 
-                # Guard against None — LangGraph emits None state_update when
                 # a node returns an empty dict (e.g. evaluator finds no new best).
                 # dict.update(None) raises 'NoneType' object is not iterable.
                 if state_update is not None:
@@ -196,8 +190,6 @@ def optimize(
                     )
 
                     # Report best_reachability as the primary progress signal.
-                    # The evaluator promotes on reachability, so this is the
-                    # metric that reflects actual optimizer progress.
                     best_reach = current_full_state.get("best_reachability", baseline_reachability)
                     reach_improvement = round(best_reach - baseline_reachability, 4)
 

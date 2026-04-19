@@ -12,12 +12,6 @@ Semantic Self-Consistency (SSC): Run the same prompt K times at temperature > 0.
 ---                                 
 Here reachability is an optional metric. When the backend supports logprobs 
 (e.g., ollama and openai). Mostly logprobs are unavailable, so SSC is more stable. 
-
-FIX (Problem 3 — Generator base drift):
-  run_rpe now accepts `current_best_prompt` in addition to `base_prompt`.
-  Variant generation always builds on top of the CURRENT best prompt from the
-  graph state, not the frozen original base_prompt. This closes the feedback
-  loop that was causing every iteration to restart from scratch.
 """
 
 import json
@@ -48,6 +42,7 @@ class RPEResult:
     best_prompt: str
     best_score: float
     best_reachability: float  # 0.5 neutral when logprobs unavailable
+    best_ssc: float = 0.5    # SSC of the winning variant; fallback control signal when logprobs absent
     history: list = field(default_factory=list)
 
 
@@ -286,6 +281,8 @@ def run_rpe(
     n_variants: int = N_VARIANTS,
     ssc_runs: int = SSC_RUNS,
     weights: Optional[dict] = None,
+    # FIX (Problem 3): current_best_prompt lets the generator build on
+    # whichever prompt is currently winning, not always the frozen original.
     current_best_prompt: Optional[str] = None,
 ) -> RPEResult:
     
@@ -297,7 +294,6 @@ def run_rpe(
                 logger.info("Using creative weights (prioritizing SSC)")
             else:
                 # DETERMINISTIC TASKS (extract, classify, summarize): 
-                # Prioritize getting the right answer (Sim) against the expected_output.
                 if expected_output:
                     weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
                     logger.info("Using deterministic weights (prioritizing Similarity)")
@@ -328,6 +324,7 @@ def run_rpe(
     best_prompt = current_best_prompt if current_best_prompt else base_prompt
     best_score = -1.0
     best_reachability = 0.5
+    best_ssc = 0.5  # track SSC of the winning variant for logprob-free fallback
 
     for i, variant in enumerate(variants):
         # K calls per variant: SSC scoring
@@ -346,9 +343,6 @@ def run_rpe(
         elif task and expected_output:
             sim = semantic_sim(output=sample_output, expected=expected_output)
         else:
-            # FIX (Problem 2): no expected_output → neutral 0.5, not 0.0
-            # This prevents the similarity dimension from dragging down every
-            # score to near-zero when the user leaves the reference field blank.
             sim = 0.5
 
         combined = (
@@ -376,10 +370,12 @@ def run_rpe(
             best_score = combined
             best_prompt = variant
             best_reachability = reach
+            best_ssc = ssc  # remember SSC of the winner for logprob-free fallback
 
     return RPEResult(
         best_prompt=best_prompt,
         best_score=best_score,
         best_reachability=best_reachability,
+        best_ssc=best_ssc,
         history=history,
     )

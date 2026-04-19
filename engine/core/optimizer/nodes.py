@@ -7,9 +7,10 @@ LangGraph node functions for the prompt optimization graph.
 
 rpe feedback loop:
   After each evaluator run, a brief verbal explanation is generated
-  describing why the current best prompt works. 
+  describing why the current best prompt works. This is injected into
+  the next generator cycle via the PERSONAS slot, the model learns
+  from its own prior successes at a semantic level.
 '''
-
 
 from core.optimizer.state import PromptState
 from core.optimizer.bayesian_search import optimize as bayesian_optimize, PERSONAS
@@ -64,7 +65,7 @@ def _generate_feedback(
                     "stream": False,
                     "options": {"temperature": 0.3},
                 },
-                timeout=60,
+                timeout=30,
             )
             resp.raise_for_status()
             return resp.json().get("message", {}).get("content", "").strip()

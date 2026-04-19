@@ -89,6 +89,7 @@ def generator_node(state: PromptState) -> dict:
     scores each with SSC + optional reachability,
     returns the best candidate to the evaluator.
 
+    RPE: True
     LLM calls: 1 (generation) + N×K (SSC) + N×1 (similarity comparison)
     With defaults: 1 + 5×2 + 5 = 16 calls per iteration.
     """
@@ -99,17 +100,44 @@ def generator_node(state: PromptState) -> dict:
     logger.info(
         f"generator iteration={iteration} "
         f"backend={state['backend']} "
+        f"use_rpe={state['use_rpe']} "
         f"base_prompt={state['base_prompt'][:60]}"
     )
 
-    result = run_rpe(
-        task=state["task"],
-        base_prompt=state["base_prompt"],
-        input_example=state["input_example"],
-        expected_output=state["expected_output"],
-        backend=backend,
-        feedback=feedback,
-    )
+    if state["use_rpe"]:
+        # UI path — open-ended LLM-driven variant generation
+        result = run_rpe(
+            task=state["task"],
+            base_prompt=state["base_prompt"],
+            input_example=state["input_example"],
+            expected_output=state["expected_output"],
+            backend=backend,
+            feedback=feedback,
+            n_variants=state["n_variants"],
+        )
+        best_prompt = result.best_prompt
+        cycle_history = [{**h, "iteration": iteration} for h in result.history]
+
+    else:
+        # CLI path — Optuna TPE over structured spaCy mutations
+        from core.optimizer.bayesian_search import optimize as bayesian_optimize, DIMENSION_SEQUENCE
+        dimension = DIMENSION_SEQUENCE[iteration % len(DIMENSION_SEQUENCE)]
+
+        extra_personas = [feedback] if feedback else []
+
+        result = bayesian_optimize(
+            task=state["task"],
+            base_prompt=state["base_prompt"],
+            input_example=state["input_example"],
+            expected_output=state["expected_output"],
+            n_trials=state["n_trials"],
+            backend=backend,
+            dimension=dimension,
+            study_name=f"imprimer_{state['task']}_{dimension}",
+            extra_personas=extra_personas,
+        )
+        best_prompt = result.best_prompt
+        cycle_history = [{**h, "iteration": iteration} for h in result.history]
 
     logger.info(
         f"generator iteration={iteration} "
@@ -117,13 +145,8 @@ def generator_node(state: PromptState) -> dict:
         f"best_reachability={result.best_reachability:.4f}"
     )
 
-    cycle_history = [
-        {**h, "iteration": iteration}
-        for h in result.history
-    ]
-
     return {
-        "current_prompt": result.best_prompt,
+        "current_prompt": best_prompt,
         "history": state["history"] + cycle_history,
     }
 
@@ -136,6 +159,7 @@ def evaluator_node(state: PromptState) -> dict:
     Generates verbal feedback for the next generator cycle.
     """
     backend = ModelBackend(state["backend"])
+    # original_global_best = state["global_best_score"]
 
     result = run_variant(
         template=state["current_prompt"],
@@ -183,8 +207,9 @@ def evaluator_node(state: PromptState) -> dict:
         })
 
     # Generate RPE feedback only when there was a genuine improvement
-    # - avoid burning an LLM call when the candidate didn't beat the baseline
-    if combined > state["global_best_score"] and state["current_prompt"] != state["base_prompt"]:
+    
+    
+    if combined > state["baseline_score"] and state["current_prompt"] != state["base_prompt"]:
         feedback = _generate_feedback(
             base_prompt=state["base_prompt"],
             best_prompt=state["current_prompt"],
@@ -203,20 +228,22 @@ def controller_node(state: PromptState) -> dict:
     Controller - decides whether to continue or terminate.
 
     Termination:
-      1. best_reachability >= target_reachability
+      1. best_reachability >= target_score
       2. current_iteration >= max_iterations
     """
     iteration = state["current_iteration"]
-    best_reach = state["best_reachability"]
-    target = state["target_reachability"]
+    best_score = state["global_best_score"]
+    target = state["target_score"]
     max_iter = state["max_iterations"]
 
-    target_reached = best_reach >= target
+    baseline = state["baseline_score"]
+    target_reached = (best_score >= target or best_score > baseline) 
     cap_reached = iteration >= max_iter - 1
 
     logger.info(
         f"controller iteration={iteration}/{max_iter} "
-        f"reachability={best_reach:.4f}/{target:.4f} "
+        f"reachability={best_score:.4f}/{target:.4f} "
+        f"baseline={baseline:4f}"
         f"target_reached={target_reached} "
         f"cap_reached={cap_reached}"
     )
@@ -232,7 +259,7 @@ def should_continue(state: PromptState) -> str:
     if state["target_reached"]:
         logger.info(
             f"graph terminating: target reachability "
-            f"{state['target_reachability']:.4f} reached"
+            f"{state['target_score']:.4f} reached"
         )
         return "end"
 

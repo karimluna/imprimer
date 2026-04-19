@@ -61,10 +61,12 @@ def optimize(
     base_prompt: str,
     input_example: str,
     expected_output: str = "",
+    n_variants: int = 6,
     n_trials: int = 20,
     backend: ModelBackend = ModelBackend.OLLAMA,
     use_judge: bool = False,
-    target_reachability: float = 0.80,
+    use_rpe: bool = True,
+    target_score: float = 0.80, # we are fine with a better score than the baseline, so just updating it based on that is okay
     max_iterations: int = 3,
 ) -> dict:
     """
@@ -98,7 +100,7 @@ def optimize(
         f"graph starting task={task} "
         f"backend={backend_str} "
         f"baseline_reachability={baseline_reachability:.4f} "
-        f"target={target_reachability:.4f} "
+        f"target={target_score:.4f} "
         f"max_iterations={max_iterations}"
     )
 
@@ -108,12 +110,14 @@ def optimize(
         "expected_output": expected_output,
         "backend": backend_str,          # string, not enum
         "use_judge": use_judge,
+        "use_rpe": use_rpe,
         "base_prompt": base_prompt,
         "current_prompt": base_prompt,
         "current_iteration": 0,
         "last_feedback": "",             # seeds RPE feedback loop
-        "target_reachability": target_reachability,
+        "target_score": target_score,
         "max_iterations": max_iterations,
+        "n_variants": n_variants,
         "n_trials": n_trials,
         "best_prompt": base_prompt,
         "best_reachability": baseline_reachability,
@@ -149,7 +153,7 @@ def optimize(
         "baseline_score": baseline_score,
         "baseline_reachability": baseline_reachability,
         "improvement": improvement,
-        "trials_run": len(final_state["history"]),
         "iterations_completed": final_state.get("current_iteration", 0),
         "target_reached": final_state.get("target_reached", False),
+        "feedback": final_state.get("last_feedback", "")
     }

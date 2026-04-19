@@ -20,10 +20,14 @@ import re
 import requests
 from dataclasses import dataclass, field
 import os
-
+from typing import Optional
 
 from core.chains.prompt_chain import ModelBackend, run_variant, _run_ollama
-from core.evaluator.scorer import _compute_reachability
+from core.evaluator.scorer import (
+    _compute_reachability, 
+    OPEN_ENDED_TASKS, 
+    _creative_quality_heuristic
+)
 from core.evaluator.embedder import pairwise_similarity
 from utils.create_logger import get_logger
 
@@ -67,7 +71,7 @@ Generate exactly {n_variants} improved variants of this prompt for the task: {ta
 Rules:
 - Each variant must be a complete, standalone instruction
 - Vary the structure, framing, and specificity across variants
-- Use {{input}} as the placeholder for user input (keep it exactly as-is)
+- Use {{{{input}}}} as the placeholder for user input (keep it exactly as-is)
 - Do not add explanations, just the variants
 
 Respond with ONLY a JSON array of strings, no markdown:
@@ -119,7 +123,7 @@ Respond with ONLY a JSON array of strings, no markdown:
             # Validate: must be non-empty strings containing {input}
             valid = [
                 v for v in variants
-                if isinstance(v, str) and v.strip() and "{input}" in v
+                if isinstance(v, str) and v.strip() 
             ]
             if valid:
                 logger.info(f"generated {len(valid)} valid variants")
@@ -137,7 +141,7 @@ def _compute_ssc(
         backend: ModelBackend,
         k: int = SSC_RUNS,
         temperature: float = SSC_TEMPERATURE,
-) -> tuple[float, float]:
+) -> tuple[float, float, str]:
     """
     Semantic Self-Consistency score for one prompt. Runs the prompt K times and 
     computes average pairwise semantic similarity. Also returns the average 
@@ -239,10 +243,12 @@ def _compute_ssc(
     if not outputs:
         return 0.0, 0.5
 
+    sample_output = outputs[0] if outputs else "" 
+
     ssc = pairwise_similarity(outputs) if len(outputs) > 1 else 0.5
     avg_reach = sum(reachabilities) / len(reachabilities) if reachabilities else 0.5
 
-    return round(ssc, 4), round(avg_reach, 4)
+    return round(ssc, 4), round(avg_reach, 4), sample_output
 
 
 def run_rpe(
@@ -254,18 +260,11 @@ def run_rpe(
     feedback: str = "",
     n_variants: int = N_VARIANTS,
     ssc_runs: int = SSC_RUNS,
+    weights: Optional[dict] = None
 ) -> RPEResult:
-    """
-    One RPE iteration: generate variants → score with SSC → select best. 
-    
-    Score formula:
-      When logprobs available:  0.5 × ssc + 0.3 × reachability + 0.2 × similarity
-      When logprobs unavailable: 0.7 × ssc + 0.3 × similarity
-
-    similarity: semantic similarity to expected_output (0.0 if not provided)
-    ssc: semantic self-consistency across K runs
-    reachability: token-level confidence (0.5 neutral if unavailable)
-    """
+    if weights is None:
+        weights = {"ssc":0.5, "reach": 0.3, "sim":0.2}
+        
     from core.evaluator.embedder import similarity as semantic_sim
 
     logger.info(
@@ -275,6 +274,7 @@ def run_rpe(
         f"backend={backend.value}"
     )
 
+    # 1 call generates all N variants
     variants = _generate_variants(
         base_prompt=base_prompt,
         feedback=feedback,
@@ -289,35 +289,38 @@ def run_rpe(
     best_reachability = 0.5
 
     for i, variant in enumerate(variants):
-        ssc, reach = _compute_ssc(
-            prompt=variant, 
+        # K calls per variant: SSC scoring
+        # sample_output reused for similarity: no extra call needed
+
+
+        ssc, reach, sample_output = _compute_ssc(
+            prompt=variant,
             input_example=input_example,
             task=task,
             backend=backend,
-            k=ssc_runs
+            k=ssc_runs,
         )
 
-        try: 
-            comparison_result = run_variant(
-                template=variant,
-                input_text=input_example,
-                task=task,
-                backend=backend
-            )
-
-            sim = semantic_sim(comparison_result.text, expected_output)
-        
-        except Exception:
+        # reuse sample_output from SSC runs 
+        if task in OPEN_ENDED_TASKS:
+            sim = _creative_quality_heuristic(sample_output)
+        elif task and expected_output:
+            sim = semantic_sim(output=sample_output, expected=expected_output)
+        else:
             sim = 0.5
 
-        logprobs_available = backend in (ModelBackend.OLLAMA, ModelBackend.OPENAI)
+        combined = (
+            weights["ssc"] * ssc + 
+            weights["reach"] * reach + 
+            weights["sim"] * sim
+        )
+        
+        combined = round(combined, 4)
 
-        if logprobs_available:
-            combined = 0.5 * ssc + 0.3 * reach + 0.2 * sim
-        else:
-            combined = 0.7 * ssc + 0.3 * sim
-
-        combined = round(combined)
+        logger.info(
+            f"variant={i} ssc={ssc:.4f} reach={reach:.4f} "
+            f"sim={sim:.4f} combined={combined:.4f}"
+        )
 
         history.append({
             "variant": variant,

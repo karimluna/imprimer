@@ -12,11 +12,13 @@ class PromptState(TypedDict):
     backend: str           # always a string (ModelBackend.value), never the enum
     use_judge: bool
     base_prompt: str       # immutable anchor, generator always reads this
+    use_rpe: bool # true: use reflective prompt optimization / false use bayesian search
 
     # Control parameters
-    target_reachability: float
+    target_score: float
     max_iterations: int
     n_trials: int
+    n_variants: int
 
     # Current state
     current_prompt: str        # decorated candidate for this cycle

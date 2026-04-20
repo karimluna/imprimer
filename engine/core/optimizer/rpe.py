@@ -86,10 +86,10 @@ RULES:
 1. Do NOT change the core task or meaning.
 2. Do NOT remove any existing constraints from the anchor prompt.
 3. Apply EXACTLY ONE of the following micro-mutation strategies to each variant:
-   - STRATEGY A: Change the root verb (e.g., 'Determine' -> 'Assess', 'Identify', 'Classify').
-   - STRATEGY B: Add a formatting constraint (e.g., 'Reply with only one word', 'Output strictly in JSON').
-   - STRATEGY C: Add a persona (e.g., 'You are an expert linguist...', 'Act as a strict classifier...').
-   - STRATEGY D: Clarify the audience or domain (e.g., 'for a 10-year-old' instead of 'for a child').
+   - STRATEGY A: Change the root verb (for example: 'Determine' -> 'Assess', 'Identify', 'Classify').
+   - STRATEGY B: Add a formatting constraint (for example: 'Reply with only one word', 'Output strictly in JSON').
+   - STRATEGY C: Add a persona (for example: 'You are an expert linguist...', 'Act as a strict classifier...').
+   - STRATEGY D: Clarify the audience or domain (for example: 'for a 10-year-old' instead of 'for a child').
 4. You MUST preserve the `{{{{input}}}}` placeholder exactly as-is.
 5. Do not add explanations, just the variants.
 

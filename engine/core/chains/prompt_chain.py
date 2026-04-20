@@ -240,6 +240,7 @@ def run_variant(
     task: str,
     backend: ModelBackend,
     temperature: float = 0.0,
+    use_cache: bool = True
 ) -> VariantResult:
     """
     Runs one prompt variant and returns what the model produced.
@@ -260,7 +261,7 @@ def run_variant(
 
     key = hashlib.sha256(cache_state.encode('utf-8')).hexdigest()
     
-    if key in _VARIANT_CACHE:
+    if use_cache and temperature ==0.0 and key in _VARIANT_CACHE:
         return _VARIANT_CACHE[key]
     
     safe_template = _normalize_template(template) # normalizing to ensure {input} exists
@@ -316,5 +317,7 @@ def run_variant(
         raise ValueError(f"Unknown backend: {backend}")
     
     # caching to avoid trials and iterations
-    _VARIANT_CACHE[key] = result
+    # fix: only cache deterministic calls
+    if use_cache and temperature == 0.0:
+        _VARIANT_CACHE[key] = result
     return result

@@ -33,7 +33,7 @@ from utils.create_logger import get_logger
 logger = get_logger(__name__)
 
 SSC_RUNS = 2
-SSC_TEMPERATURE = 0.7
+SSC_TEMPERATURE = 0.8
 N_VARIANTS = 5
 
 
@@ -280,7 +280,7 @@ def run_rpe(
             if norm_exp in norm_out:
                 sim = 1.0
             else:
-                sim = similarity(result.text, expected_output)
+                sim = similarity(sample_output, expected_output)
         elif task in OPEN_ENDED_TASKS:
             sim = _creative_quality_heuristic(sample_output)
         elif expected_output:

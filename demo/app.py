@@ -394,6 +394,16 @@ def query_best(task, limit):
         return str(e)
 
 
+# Models confirmed available on HF free serverless inference API
+# Source: https://huggingface.co/inference/models
+HF_FREE_MODELS = [
+    "meta-llama/Llama-3.2-1B-Instruct",
+    "meta-llama/Llama-3.2-3B-Instruct",
+    "HuggingFaceH4/zephyr-7b-beta",
+    "microsoft/Phi-3-mini-4k-instruct",
+    "google/gemma-2-2b-it",
+]
+
 with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
 
     gr.Markdown("""
@@ -429,13 +439,8 @@ with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
                     if BACKEND_ID == ModelBackend.HUGGINGFACE:
                         model_id = gr.Dropdown(
                             label="Hugging Face Model ID",
-                            choices=[
-                                "HuggingFaceTB/SmolLM2-1.7B-Instruct",
-                                "Qwen/Qwen2.5-1.5B-Instruct",
-                                "microsoft/phi-2",
-                                "google/gemma-2-9b-it",
-                            ],
-                            value="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+                            choices=HF_FREE_MODELS,
+                            value=HF_FREE_MODELS[0],
                             allow_custom_value=True,
                         )
                     else:

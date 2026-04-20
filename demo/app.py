@@ -202,8 +202,8 @@ def run_optimization(
             expected_output=expected_output,
             n_variants=int(n_variants),
             backend=BACKEND_ID,
-            use_judge=False,
-            use_rpe=True,
+            use_judge=False, # deprecated: in further updates this is going to be removed for redundancy
+            use_rpe=True, 
             target_score=float(target_score), 
             max_iterations=int(max_iterations),
         )
@@ -243,9 +243,9 @@ def run_optimization(
                         </div>"""
                     elif i == iteration:
                         tl += f"""<div class="iter-row running">
-                            <span class="iter-label">Cycle {i} <span class="spin">↻</span></span>
-                            <div class="bar-wrap"><div class="bar-fill" style="width:{min(100, (best_s/1.0)*100)}%"></div></div>
-                            <span class="score-val improved">{best_s:.3f}</span><span class="score-val improved">+{improv:.3f}</span>
+                            <span class="iter-label">Cycle {i} <span class='spin'>↻</span></span>
+                            <div class='bar-wrap'><div class='bar-fill' style='width:{min(100, (best_s/1.0)*100)}%'></div></div>
+                            <span class='score-val improved'>{best_s:.3f}</span><span class='score-val improved'>+{improv:.3f}</span>
                         </div>"""
                     else:
                         tl += f"""<div class="iter-row pending">
@@ -433,8 +433,7 @@ with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
                                 "HuggingFaceTB/SmolLM2-1.7B-Instruct",
                                 "Qwen/Qwen2.5-1.5B-Instruct",
                                 "microsoft/phi-2",
-                                "google/gemma-2b-it",
-                                "meta-llama/Llama-3.2-1B-Instruct"
+                                "google/gemma-2-9b-it",
                             ],
                             value="HuggingFaceTB/SmolLM2-1.7B-Instruct",
                             allow_custom_value=True,
@@ -454,7 +453,7 @@ with gr.Blocks(title="Imprimer - LLM Prompt Control") as demo:
                     raise f"No backend supported {e}"
                 
                 hf_token = gr.Textbox(
-                    label="HF Token (Optional)",
+                    label="HF Token",
                     placeholder="hf_...",
                     type="password",
                 )

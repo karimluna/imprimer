@@ -112,10 +112,8 @@ def _build_huggingface_llm():
 def _extract_hf_api_logprobs(response) -> list:
     """
     Extracts logprobs from the Hugging Face API ChatCompletion response.
-    Returns [] safely if the response doesn't contain logprob data.
-
-    Is temporally discarded as really depends on provider wheter the 
-    model returns logprobs.
+    Returns [] safely if the response doesn't contain logprob data or if
+    the model/provider doesn't support logprobs.
     """
     try:
         lp_content = response.choices[0].logprobs.content
@@ -247,8 +245,9 @@ def run_variant(
     Runs one prompt variant and returns what the model produced.
 
     Backend selection becomes purely a data sovereignty decision:
-      OLLAMA  - data never leaves the machine, full logprobs
-      OPENAI  - external API, full logprobs, stronger base model
+      OLLAMA      - data never leaves the machine, full logprobs
+      OPENAI      - external API, full logprobs, stronger base model
+      HUGGINGFACE - external API, logprobs when supported by provider
 
     """
     cache_state = json.dumps({
@@ -295,25 +294,22 @@ def run_variant(
     elif backend == ModelBackend.HUGGINGFACE:
         client = _build_huggingface_llm()
         
-        rendered = prompt.format(task=task, input=input_text) # formatted is exclusive for HF as only client.text_generation provide probs
-        formatted = f"""### Instruction: 
-{rendered} 
-
-### Response:
-"""
         start = time.time()
-        text = client.text_generation(
-            formatted,
-            max_new_tokens=150,
-            temperature=0.3,
-            do_sample=True,
+        response = client.chat_completion(
+            messages=[{"role": "user", "content": rendered}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            logprobs=True,
+            top_logprobs=5,
         )
         elapsed_ms = (time.time() - start) * 1000
+        
+        text = response.choices[0].message.content
         
         result = VariantResult(
             text=text,
             latency_ms=round(elapsed_ms, 2),
-            logprobs=[] # not supported but free so, there is a tradeoff
+            logprobs=_extract_hf_api_logprobs(response),
         )
     
     else:

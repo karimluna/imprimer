@@ -385,7 +385,7 @@ def query_best(task, limit):
             return f"No evaluations found for task '{task}'."
         
         return f"""**Task:** {result['task']}
-**Evaluations sampled:** {result['evaluations']}
+**Evaluations sampled:** {result['evaluations_sampled']}
 **Avg score:** {result['avg_score']:.4f}
 
 **Best prompt:** {result['best_template']}

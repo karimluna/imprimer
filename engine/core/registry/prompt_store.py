@@ -197,26 +197,42 @@ def mark_best_optimization_trial(run_id: str, trial_number: int) -> None:
 
 def best_variant_for_task(task: str, limit: int = 10) -> dict:
     with _get_conn() as conn:
-        rows = conn.execute("""
+        # First, check the optimization_trials table (where RPE runs are saved)
+        row = conn.execute("""
             SELECT
-                winner,
-                CASE WHEN winner = 'a' THEN variant_a ELSE variant_b END AS winning_template,
-                COALESCE(AVG(CASE WHEN winner = 'a' THEN reachability_a ELSE reachability_b END), 0.0) AS avg_reachability,
-                COALESCE(AVG(CASE WHEN winner = 'a' THEN score_a ELSE score_b END), 0.0) AS avg_score,
-                COUNT(*) as evaluations
-            FROM evaluations
-            WHERE task = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-        """, (task, limit)).fetchall()
+                candidate_prompt AS best_template,
+                AVG(score) AS avg_score,
+                AVG(reachability) AS avg_reachability,
+                COUNT(*) AS evaluations_sampled
+            FROM optimization_trials
+            WHERE task = ? AND is_best = 1
+            GROUP BY candidate_prompt
+            ORDER BY avg_score DESC
+            LIMIT 1
+        """, (task,)).fetchone()
 
-    if not rows:
+        # Fallback to the evaluations table (A/B comparisons) if no RPE data exists
+        if not row:
+            row = conn.execute("""
+                SELECT
+                    CASE WHEN winner = 'a' THEN variant_a ELSE variant_b END AS best_template,
+                    COALESCE(AVG(CASE WHEN winner = 'a' THEN score_a ELSE score_b END), 0.0) AS avg_score,
+                    COALESCE(AVG(CASE WHEN winner = 'a' THEN reachability_a ELSE reachability_b END), 0.0) AS avg_reachability,
+                    COUNT(*) AS evaluations_sampled
+                FROM evaluations
+                WHERE task = ?
+                GROUP BY best_template
+                ORDER BY avg_score DESC
+                LIMIT 1
+            """, (task,)).fetchone()
+
+    if not row:
         return {}
 
     return {
         "task": task,
-        "best_template": rows[0]["winning_template"],
-        "avg_reachability": round(float(rows[0]["avg_reachability"]), 4),
-        "avg_score": round(float(rows[0]["avg_score"]), 4),
-        "evaluations_sampled": rows[0]["evaluations"],
+        "best_template": row["best_template"],
+        "avg_reachability": round(float(row["avg_reachability"]), 4),
+        "avg_score": round(float(row["avg_score"]), 4),
+        "evaluations_sampled": row["evaluations_sampled"],
     }

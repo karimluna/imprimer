@@ -26,6 +26,7 @@ from core.optimizer.nodes import (
 )
 from core.chains.prompt_chain import ModelBackend, run_variant
 from core.evaluator.scorer import score as compute_score
+from core.registry.prompt_store import OptimizationTrialRecord, save_optimization_trial, mark_best_optimization_trial
 from utils.create_logger import get_logger
 from typing import Generator
 

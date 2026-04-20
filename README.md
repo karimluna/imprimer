@@ -28,7 +28,7 @@ Given a task and two prompt variants, Imprimer asks: which prompt gives you more
 
 Every evaluation is persisted. Over time, the system learns which prompts control each task most effectively and surfaces that knowledge through the `best` command and `/best` endpoint.
 
-A __demo__ for the Reflective Optimizaiton Evolution version is available at [imprimer](https://balor78-imprimer.hf.space/), because the project requires a large number of LLM calls I recommend using local models.
+A __demo__ for the Reflective Optimizaiton Evolution version is available at [imprimer](https://balor78-imprimer.hf.space/), because the project requires a large number of LLM calls I recommend using local models and running with `python -m demo.app` or the CLI directly.
 
 ## Theoretical foundation
 

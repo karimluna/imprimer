@@ -99,9 +99,9 @@ A Command Line Interface is integrated for immediate use. See [Imprimer CLI](./d
 Here we can see an example of the capabilities of the platform in simple tasks, for example using Qwen2.5:1.5B (a really tiny model) in Ollama without fine-tuning, we get a model that can classify an email as spam with confidence, we first run optimization with some prompt, the system is in charge of getting the best prompt via __Reflective Prompt Evolution__!. In the right image we can see how now it classifies the email as spam.
 
 <p align="center">
-  <img src="docs/examples/optimization-imprimer.png.png" height="450" alt="optimization" width="350" />
+  <img src="docs/examples/optimization-imprimer.png" height="450" alt="optimization" />
   &nbsp;
-  <img src="docs/examples/stability-imprimer.png" height="400" alt="second image" width="350" />
+  <img src="docs/examples/stability-imprimer.png" height="450" alt="second image" />
 </p>   
 
 #### Scoring function

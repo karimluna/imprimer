@@ -24,7 +24,7 @@
 
 Most prompt engineering is trial and error. Imprimer treats it as a **control problem**.
 
-Given a task and two prompt variants, Imprimer asks: which prompt gives you more control over the model's output distribution? It measures this with a **Reachability Index** grounded in the paper *"What's the Magic Word? A Control Theory of LLM Prompting"* (Bhargava et al., 2023) — the first mathematically rigorous analysis of prompt controllability over autoregressive sequence models.
+Given a task and two prompt variants, Imprimer asks: which prompt gives you more control over the model's output distribution? It measures this with a **Reachability Index** grounded in the paper *"What's the Magic Word? A Control Theory of LLM Prompting"* (Bhargava et al., 2023), the first mathematically rigorous analysis of prompt controllability over autoregressive sequence models.
 
 Every evaluation is persisted. Over time, the system learns which prompts control each task most effectively and surfaces that knowledge through the `best` command and `/best` endpoint.
 
@@ -32,7 +32,7 @@ A __demo__ for the Reflective Optimizaiton Evolution version is available at [im
 
 ## Theoretical foundation
 
-The LLM defines a stochastic dynamical system over token sequences. A prompt acts as a **control input** $u$ that steers the generation trajectory toward a desired output $y^*$.
+The LLM can be defined as a stochastic dynamical system over token sequences. A prompt acts as a **control input** $u$ that steers the generation trajectory toward a desired output $y^*$.
 
 Following the intuition of reachability from control theory, the key question is:
 
@@ -81,7 +81,7 @@ Given a task $x_0$, Imprimer optimizes prompts $u$ to maximize semantic alignmen
 
 ## Architecture
 
-Imprimer is two services connected by a gRPC contract. The proto file is the single source of truth — Go and Python never share code, only the contract. The diagram below shows the information flow. The orchestrator cycle integrates the **reflective agent** pattern: the reflection (evaluation) node analyzes outputs and returns a feedback signal, creating the improvement loop.
+Imprimer is two services connected by a gRPC contract. The proto file is the single source of truth, Go and Python never share code, only the contract. The diagram below shows the information flow. The orchestrator cycle integrates the **reflective agent** pattern: the reflection (evaluation) node analyzes outputs and returns a feedback signal, creating the improvement loop.
 
 <p align="center">
   <img src="docs/assets/show-arch.drawio.png" height="350" alt="Architecture diagram">
@@ -91,7 +91,7 @@ Imprimer is two services connected by a gRPC contract. The proto file is the sin
 
 **Python handles:** LLM inference (Ollama, OpenAI, HuggingFace), logprob extraction, reachability computation, LLM-as-judge scoring, Optuna/RPE optimization, injection scanning, registry persistence.
 
-**Boundary:** `proto/imprimer.proto` — three RPCs, never more complexity than needed.
+**Boundary:** `proto/imprimer.proto`, three RPCs, never more complexity than needed.
 
 A Command Line Interface is integrated for immediate use. See [Imprimer CLI](./docs/cli-imprimer.md).
 
@@ -125,7 +125,7 @@ Mutations are searched one dimension at a time across graph iterations, preventi
 
 ### UI path: Reflective Prompt Evolution (RPE)
 
-Used in the Gradio interface. Instead of predefined mutations, the LLM generates its own variant prompts based on the current best and verbal feedback from prior rounds — an open-ended search that can discover transformations spaCy mutations cannot.
+Used in the Gradio interface. Instead of predefined mutations, the LLM generates its own variant prompts based on the current best and verbal feedback from prior rounds, an open-ended search that can discover transformations spaCy mutations cannot.
 
 
 **Semantic Self-Consistency (SSC):** run the same prompt K times at temperature > 0 and measure average pairwise semantic similarity of the K outputs. High SSC → the prompt reliably steers the model to similar outputs. Low SSC → the prompt leaves too much to chance.
@@ -258,7 +258,7 @@ protoc -I proto \
 
 ## Still in development
 
-The user interface (`imprimer ui`) is planned as a TensorBoard-style dashboard reading directly from the registry — still in development. Fine-tuning escalation (LoRA when the optimizer plateaus) is the next planned addition after the optimization loop stabilizes on complex tasks.
+The user interface (`imprimer ui`) is planned as a TensorBoard-style dashboard reading directly from the registry, still in development. Fine-tuning escalation (LoRA when the optimizer plateaus) is the next planned addition after the optimization loop stabilizes on complex tasks.
 
 
 ## Motivation

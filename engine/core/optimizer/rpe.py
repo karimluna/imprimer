@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import os
 from typing import Optional
 
-from core.chains.prompt_chain import ModelBackend, run_variant, _run_ollama
+from core.chains.prompt_chain import ModelBackend, run_variants_parallel
 from core.evaluator.scorer import (
     _compute_reachability, 
     OPEN_ENDED_TASKS, 
@@ -52,45 +52,50 @@ def _generate_variants(
     n_variants: int,
     backend: ModelBackend,
     task: str,
-    # FIX: current_best_prompt is the evolving anchor, distinct from the frozen base_prompt
     current_best_prompt: Optional[str] = None,
 ) -> list[str]:
     """
-    Verbalized sampling — asks the LLM to generate N improved prompt variants.
+    Verbalized sampling, asks the LLM to generate N improved prompt variants.
 
     The LLM receives the CURRENT BEST prompt (not the frozen original) and
     verbal feedback from the previous iteration. This ensures each RPE cycle
     genuinely builds on prior gains rather than restarting from scratch.
 
-    FIX: uses `current_best_prompt` as the generation anchor when provided.
-
-    returns: list of variant strings 
+    Enforces micro-mutations to prevent over-mutation and reachability collapse.
     """
     # Use the evolving best prompt as the anchor, fall back to base_prompt
     anchor_prompt = current_best_prompt if current_best_prompt else base_prompt
 
     feedback_section = (
         f"\nCRITICAL FEEDBACK FROM PREVIOUS ROUND:\n{feedback}\n\n"
-        f"You MUST fix the issues mentioned in the feedback above."
+        f"You MUST address the issues mentioned in the feedback using one of the allowed strategies."
         if feedback else ""
     )
+    
     example_array_str = "[" + ", ".join([f'"variant {i+1}"' for i in range(n_variants)]) + "]"
-    generation_prompt = f"""You are a prompt engineering expert. Your task is to improve the following instruction prompt.
     
-    Current best prompt:
-    {anchor_prompt}
-    {feedback_section}
-    
-    Generate exactly {n_variants} improved variants of this prompt for the task: {task}.
+    # FIX: Strict micro-mutation prompt to prevent wild overhauls that destroy reachability
+    generation_prompt = f"""You are a precise prompt engineer. Your goal is to improve the anchor prompt by applying exactly ONE micro-mutation per variant.
 
-    Rules:
-    - Each variant must be a complete, standalone instruction.
-    - Vary the structure and framing, but explicitly address the feedback provided.
-    - Use {{{{input}}}} as the placeholder for user input (keep it exactly as-is).
-    - Do not add explanations, just the variants.
+TASK: {task}
+ANCHOR PROMPT:
+{anchor_prompt}
+{feedback_section}
 
-    Respond with ONLY a JSON array of strings containing exactly {n_variants} variants, no markdown:
-    {example_array_str}"""
+RULES:
+1. Do NOT change the core task or meaning.
+2. Do NOT remove any existing constraints from the anchor prompt.
+3. Apply EXACTLY ONE of the following micro-mutation strategies to each variant:
+   - STRATEGY A: Change the root verb (e.g., 'Determine' -> 'Assess', 'Identify', 'Classify').
+   - STRATEGY B: Add a formatting constraint (e.g., 'Reply with only one word', 'Output strictly in JSON').
+   - STRATEGY C: Add a persona (e.g., 'You are an expert linguist...', 'Act as a strict classifier...').
+   - STRATEGY D: Clarify the audience or domain (e.g., 'for a 10-year-old' instead of 'for a child').
+4. You MUST preserve the `{{{{input}}}}` placeholder exactly as-is.
+5. Do not add explanations, just the variants.
+
+Generate exactly {n_variants} micro-mutated variants.
+Respond with ONLY a JSON array of strings containing exactly {n_variants} variants, no markdown:
+{example_array_str}"""
     
     raw = ""
     try:
@@ -103,7 +108,7 @@ def _generate_variants(
                     "model": model,
                     "messages": [{"role": "user", "content": generation_prompt}],
                     "stream": False,
-                    "options": {"temperature": 0.7},
+                    "options": {"temperature": 0.7, "num_predict": 300},
                 },
                 timeout=60,
             )
@@ -125,7 +130,7 @@ def _generate_variants(
             response = client.chat_completion(
                 messages=[{"role": "user", "content": generation_prompt}],
                 temperature=0.7,
-                max_tokens=512,
+                max_tokens=300,
             )
             raw = response.choices[0].message.content
 
@@ -134,12 +139,13 @@ def _generate_variants(
         cleaned = re.sub(r'```\s*', '', cleaned).strip()
         match = re.search(r'\[.*\]', cleaned, re.DOTALL)
         if match:
-            variants = json.loads(match.group())
-            # Validate: must be non-empty strings
-            valid = [
-                v for v in variants
-                if isinstance(v, str) and v.strip() 
-            ]
+            try:
+                decoder = json.JSONDecoder()
+                variants, _ = decoder.raw_decode(match.group())
+            except json.JSONDecodeError:
+                variants = []
+                
+            valid = [v for v in variants if isinstance(v, str) and v.strip()]
             if valid:
                 logger.info(f"generated {len(valid)} valid variants")
                 return valid[:n_variants]
@@ -154,6 +160,7 @@ def _generate_variants(
 
     return [anchor_prompt]
 
+
 def _compute_ssc(
         prompt: str,
         input_example: str,
@@ -166,104 +173,35 @@ def _compute_ssc(
     Semantic Self-Consistency score for one prompt. Runs the prompt K times and 
     computes average pairwise semantic similarity. Also returns the average 
     reachability if logprobs are available.
-
-    returns (ssc_score, avg_reachability, sample_output)
-    avg_reachability is 0.5 (neutral) when logprobs unavailable.
     """
-    from langchain_core.prompts import PromptTemplate
-
-    prompt_template = PromptTemplate(
-        template=prompt, 
-        input_variables=["task", "input"]
+    # Create K copies of the same prompt template to run in parallel
+    variant_copies = [prompt] * k
+    
+    results = run_variants_parallel(
+        templates=variant_copies,
+        input_text=input_example,
+        task=task,
+        backend=backend,
+        temperature=temperature,
+        max_workers=k  # Run all K simultaneously
     )
-    rendered = prompt_template.format(task=task, input=input_example)
-
+    
     outputs = []
     reachabilities = []
-    for _ in range(k):
-        try:
-            if backend == ModelBackend.OLLAMA:
-                base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-                model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-                resp = requests.post(
-                    f"{base_url}/api/chat",
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": rendered}],
-                        "stream": False,
-                        "logprobs": True,
-                        "top_logprobs": 5,
-                        "options": {
-                            "temperature": temperature,
-                            "top_p": 0.95,
-                        },
-                    },
-                    timeout=60,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                text = data.get("message", {}).get("content", "")
-                raw_lp = data.get("logprobs") or []
-                logprobs = [
-                    {
-                        "token": e.get("token", ""),
-                        "logprob": e.get("logprob", -10.0),
-                        "top": [
-                            {"token": t["token"], "logprob": t["logprob"]}
-                            for t in e.get("top_logprobs", [])
-                        ],
-                    }
-                    for e in raw_lp
-                ]
-                reachabilities.append(_compute_reachability(logprobs))
-
-            elif backend == ModelBackend.OPENAI:
-                from langchain_openai import ChatOpenAI
-                llm = ChatOpenAI(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                    temperature=temperature,
-                    logprobs=True,
-                    top_logprobs=5,
-                )
-                response = llm.invoke(rendered)
-                text = response.content
-                try:
-                    lp = response.response_metadata.get("logprobs", {})
-                    lp_list = [
-                        {
-                            "token": td["token"],
-                            "logprob": td["logprob"],
-                            "top": [
-                                {"token": t["token"], "logprob": t["logprob"]}
-                                for t in td.get("top_logprobs", [])
-                            ],
-                        }
-                        for td in lp.get("content", [])
-                    ]
-                    reachabilities.append(_compute_reachability(lp_list))
-                except Exception:
-                    reachabilities.append(0.5)
-
-            else:
-                # HuggingFace — no logprobs
-                result = run_variant(
-                    template=prompt,
-                    input_text=input_example,
-                    task=task,
-                    backend=backend,
-                )
-                text = result.text
-                reachabilities.append(0.5)  # neutral fallback
-
-            outputs.append(text)
-
-        except Exception as e:
-            logger.warning(f"SSC run failed: {e}")
+    
+    for r in results:
+        if r.text.strip():
+            outputs.append(r.text)
+            
+        if r.logprobs:
+            reachabilities.append(_compute_reachability(r.logprobs))
+        else:
+            reachabilities.append(0.5)  # Neutral fallback if no logprobs
 
     if not outputs:
         return 0.0, 0.5, ""
 
-    sample_output = outputs[0] if outputs else "" 
+    sample_output = outputs[0]
 
     ssc = pairwise_similarity(outputs) if len(outputs) > 1 else 0.5
     avg_reach = sum(reachabilities) / len(reachabilities) if reachabilities else 0.5
@@ -281,27 +219,23 @@ def run_rpe(
     n_variants: int = N_VARIANTS,
     ssc_runs: int = SSC_RUNS,
     weights: Optional[dict] = None,
-    # FIX (Problem 3): current_best_prompt lets the generator build on
-    # whichever prompt is currently winning, not always the frozen original.
     current_best_prompt: Optional[str] = None,
 ) -> RPEResult:
     
     if weights is None:
-            if task in OPEN_ENDED_TASKS:
-                # CREATIVE TASKS: No exact right answer. 
-                # Prioritize consistency (SSC) and control (Reachability).
-                weights = {"ssc": 0.5, "reach": 0.3, "sim": 0.2}
-                logger.info("Using creative weights (prioritizing SSC)")
+        if task in OPEN_ENDED_TASKS:
+            weights = {"ssc": 0.5, "reach": 0.3, "sim": 0.2}
+            logger.info("Using creative weights (prioritizing SSC)")
+        else:
+            if expected_output:
+                weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
+                logger.info("Using deterministic weights (prioritizing Similarity)")
             else:
-                # DETERMINISTIC TASKS (extract, classify, summarize): 
-                if expected_output:
-                    weights = {"ssc": 0.2, "reach": 0.2, "sim": 0.6}
-                    logger.info("Using deterministic weights (prioritizing Similarity)")
-                else:
-                    weights = {"ssc": 0.4, "reach": 0.4, "sim": 0.2}
-                    logger.info("Using deterministic weights without reference (SSC+Reachability)")
+                weights = {"ssc": 0.4, "reach": 0.4, "sim": 0.2}
+                logger.info("Using deterministic weights without reference (SSC+Reachability)")
             
     from core.evaluator.embedder import similarity as semantic_sim
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     logger.info(
         f"rpe task={task} "
@@ -310,67 +244,89 @@ def run_rpe(
         f"backend={backend.value}"
     )
 
-    # 1 call generates all N variants — from the CURRENT BEST, not frozen base
     variants = _generate_variants(
         base_prompt=base_prompt,
         feedback=feedback,
         n_variants=n_variants,
         backend=backend,
         task=task,
-        current_best_prompt=current_best_prompt,  # FIX: evolving anchor
+        current_best_prompt=current_best_prompt,
     )
 
     history = []
     best_prompt = current_best_prompt if current_best_prompt else base_prompt
     best_score = -1.0
     best_reachability = 0.5
-    best_ssc = 0.5  # track SSC of the winning variant for logprob-free fallback
+    best_ssc = 0.5
 
-    for i, variant in enumerate(variants):
-        # K calls per variant: SSC scoring
-        # sample_output reused for similarity: no extra call needed
+    # FIX: Parallelize the scoring of all variants simultaneously
+    # Instead of a sequential `for variant in variants:` loop, we submit 
+    # all _compute_ssc calls to a thread pool.
+    
+    def _score_variant(variant_str):
+        """Helper to score a single variant, run inside the thread."""
         ssc, reach, sample_output = _compute_ssc(
-            prompt=variant,
+            prompt=variant_str,
             input_example=input_example,
             task=task,
             backend=backend,
             k=ssc_runs,
         )
 
-        # reuse sample_output from SSC runs 
-        if task in OPEN_ENDED_TASKS:
+        if task in {"classify", "extract"} and expected_output:
+            norm_out = sample_output.strip().lower()
+            norm_exp = expected_output.strip().lower()
+            # If expected is "yes", and output is "yes, the child can", sim = 1.0
+            sim = 1.0 if norm_exp in norm_out else 0.0
+        elif task in OPEN_ENDED_TASKS:
             sim = _creative_quality_heuristic(sample_output)
-        elif task and expected_output:
+        elif expected_output:
             sim = semantic_sim(output=sample_output, expected=expected_output)
         else:
             sim = 0.5
 
-        combined = (
+        combined = round(
             weights["ssc"] * ssc + 
             weights["reach"] * reach + 
-            weights["sim"] * sim
+            weights["sim"] * sim, 
+            4
         )
         
-        combined = round(combined, 4)
-
-        logger.info(
-            f"variant={i} ssc={ssc:.4f} reach={reach:.4f} "
-            f"sim={sim:.4f} combined={combined:.4f}"
-        )
-
-        history.append({
-            "variant": variant,
+        return {
+            "variant": variant_str,
             "ssc": ssc,
             "reachability": reach,
             "similarity": sim,
             "score": combined,
-        })
+        }
 
-        if combined > best_score:
-            best_score = combined
-            best_prompt = variant
-            best_reachability = reach
-            best_ssc = ssc  # remember SSC of the winner for logprob-free fallback
+    # Run all variant evaluations in parallel
+    with ThreadPoolExecutor(max_workers=n_variants) as executor:
+        # Map futures to their variant index for ordered logging if needed
+        future_to_idx = {
+            executor.submit(_score_variant, v): i for i, v in enumerate(variants)
+        }
+        
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                result = future.result()
+                
+                logger.info(
+                    f"variant={idx} ssc={result['ssc']:.4f} reach={result['reachability']:.4f} "
+                    f"sim={result['similarity']:.4f} combined={result['score']:.4f}"
+                )
+
+                history.append(result)
+
+                if result["score"] > best_score:
+                    best_score = result["score"]
+                    best_prompt = result["variant"]
+                    best_reachability = result["reachability"]
+                    best_ssc = result["ssc"]
+                    
+            except Exception as e:
+                logger.error(f"Variant {idx} scoring failed: {e}")
 
     return RPEResult(
         best_prompt=best_prompt,

@@ -12,6 +12,7 @@ State invariants:
                    Nodes call ModelBackend(state["backend"]) to recover it.
   last_feedback  : verbal explanation from the evaluator, injected into
                    the next generator cycle as an extra persona candidate.
+
 """
 
 from langgraph.graph import StateGraph, END

@@ -7,7 +7,28 @@ import hashlib
 import json
 
 
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate # to rid off i/o bounding in ollama
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from utils.create_logger import get_logger
+
+
+logger = get_logger(__name__)
+
+
+TASK_MAX_TOKENS = {
+    "classify": 10,
+    "extract": 50,
+    "summarize": 100,
+    "reasoning": 150,
+    "creative_writing": 500,
+    "code_generation": 300,
+    "rewrite": 100,
+    "roleplay": 150,
+    "qa": 50,
+    "translate": 150,
+}
+
+
 
 _VARIANT_CACHE = {}
 
@@ -116,7 +137,7 @@ def _extract_hf_api_logprobs(response) -> list:
         return []
 
 
-def _run_ollama(prompt_text: str, temperature: float = 0.0) -> VariantResult:
+def _run_ollama(prompt_text: str, temperature: float = 0.0, max_tokens: int = 150) -> VariantResult:
     """
     Calls Ollama /api/chat with logprobs enabled.
     
@@ -142,6 +163,7 @@ def _run_ollama(prompt_text: str, temperature: float = 0.0) -> VariantResult:
             "temperature": temperature,
             "top_p": 0.95,
             "top_k": 50,
+            "num_predict": max_tokens
         }
     }
 
@@ -180,11 +202,46 @@ def _run_ollama(prompt_text: str, temperature: float = 0.0) -> VariantResult:
     )
 
 
+def run_variants_parallel(
+    templates: list[str],
+    input_text: str,
+    task: str,
+    backend: ModelBackend,
+    max_workers: int = 4,
+    temperature: float = 0.0,
+) -> list[VariantResult]:
+    """
+    Executes multiple prompt variants in parallel using threads.
+    Bypasses GIL since requests.post is I/O bound.
+    """
+    results = [None] * len(templates)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all jobs to the thread pool
+        future_to_index = {
+            executor.submit(run_variant, tpl, input_text, task, backend, temperature): idx 
+            for idx, tpl in enumerate(templates)
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_index):
+            idx = future_to_index[future]
+            try:
+                results[idx] = future.result()
+            except Exception as e:
+                logger.error(f"parallel variant failed: {e}")
+                # Fallback to a failed result so the list maintains order
+                results[idx] = VariantResult(text="", latency_ms=0, logprobs=[])
+                
+    return results
+
+
 def run_variant(
     template: str,
     input_text: str,
     task: str,
     backend: ModelBackend,
+    temperature: float = 0.0,
 ) -> VariantResult:
     """
     Runs one prompt variant and returns what the model produced.
@@ -198,7 +255,8 @@ def run_variant(
         "template": template, 
         "input_text": input_text, 
         "task": task, 
-        "backend": backend.value
+        "backend": backend.value,
+        "temperature": temperature,
     }, sort_keys=True)
 
     key = hashlib.sha256(cache_state.encode('utf-8')).hexdigest()
@@ -212,13 +270,14 @@ def run_variant(
         template=safe_template,
         input_variables=["task", "input"]
     )
-    
+
+    max_tokens = TASK_MAX_TOKENS.get(task, 150)
     # Render the prompt template to a plain string for Ollama
     # (Ollama's /api/generate expects a string, not a message list)
     rendered = prompt.format(task=task, input=input_text)
 
     if backend == ModelBackend.OLLAMA:
-        result = _run_ollama(rendered)
+        result = _run_ollama(prompt_text=rendered, temperature=temperature, max_tokens=max_tokens)
 
     elif backend == ModelBackend.OPENAI:
         llm = _build_openai_llm()

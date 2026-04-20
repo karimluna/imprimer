@@ -4,13 +4,11 @@ Stability analyzer, multi-run sampling with variance and confidence metrics.
 
 import math
 from dataclasses import dataclass
-import os
 
-from core.chains.prompt_chain import ModelBackend
+from core.chains.prompt_chain import ModelBackend, run_variants_parallel
 from core.evaluator.embedder import pairwise_similarity
 from core.evaluator.scorer import _compute_reachability
 from utils.create_logger import get_logger
-import requests
 
 logger = get_logger(__name__)
 
@@ -32,114 +30,6 @@ class StabilityResult:
     recommendation: str = ""
 
 
-def _run_with_temperature(
-    prompt_text: str,
-    backend: ModelBackend,
-    temperature: float,
-) -> tuple[str, list]:
-    """
-    Runs one inference call with a specific temperature.
-    """
-    if backend == ModelBackend.OLLAMA:
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt_text}],
-            "stream": False,
-            "logprobs": True,
-            "top_logprobs": 5,
-            "options": {
-                "temperature": temperature,
-                "top_p": 0.95,
-                "top_k": 50,
-            }
-        }
-
-        resp = requests.post(
-            f"{base_url}/api/chat",
-            json=payload,
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        text = data.get("message", {}).get("content", "")
-        raw = data.get("logprobs") or []
-        logprobs = [
-            {
-                "token": e.get("token", ""),
-                "logprob": e.get("logprob", -10.0),
-                "top": [
-                    {"token": t["token"], "logprob": t["logprob"]}
-                    for t in e.get("top_logprobs", [])
-                ],
-            }
-            for e in raw
-        ]
-        return text, logprobs
-
-    elif backend == ModelBackend.OPENAI:
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            temperature=temperature,
-            logprobs=True,
-            top_logprobs=5,
-        )
-        response = llm.invoke(prompt_text)
-        text = response.content
-
-        logprobs = []
-        try:
-            lp = response.response_metadata.get("logprobs", {})
-            if lp and "content" in lp:
-                logprobs = [
-                    {
-                        "token": td["token"],
-                        "logprob": td["logprob"],
-                        "top": [
-                            {"token": t["token"], "logprob": t["logprob"]}
-                            for t in td.get("top_logprobs", [])
-                        ],
-                    }
-                    for td in lp["content"]
-                ]
-        except Exception:
-            pass
-
-        return text, logprobs
-    
-    elif backend == ModelBackend.HUGGINGFACE:
-        from huggingface_hub import InferenceClient
-        
-        token = os.environ.get("HF_TOKEN")
-        model_id = os.environ.get("HF_MODEL_ID", "meta-llama/Meta-Llama-3-8B-Instruct")
-        client = InferenceClient(model=model_id, token=token)
-
-        formatted = f"""### Instruction: 
-{prompt_text} 
-
-### Response:
-"""
-        text = client.text_generation(
-            formatted,
-            max_new_tokens=150,
-            temperature=0.3,
-            do_sample=True,
-        )
-
-        logprobs = []
-        return text, logprobs
-
-    else:
-        raise ValueError(f"Unknown backend: {backend}")
-
-
-def _pairwise_similarity(outputs: list[str]) -> float:
-    return pairwise_similarity(outputs)
-
-
 def analyze(
     prompt: str,
     input_text: str,
@@ -150,33 +40,52 @@ def analyze(
 ) -> StabilityResult:
     """
     Runs the prompt N times and measures output stability.
-
-    FIX (Problem 5): detects extreme output length variance and adds a
-    temperature warning to the recommendation when max/min output length
-    ratio exceeds 3×. This is almost always the cause of instability on
-    classify/extract tasks where the model sometimes produces a terse
-    answer and sometimes a full explanation.
     """
-    full_prompt = f"Your task is {task}\n:{prompt}\n\nInput: {input_text}" if input_text else prompt
+    templates = [prompt] * n_runs
+    
+    # This uses the exact same formatting and execution logic as the optimizer
+    results = run_variants_parallel(
+        templates=templates,
+        input_text=input_text,
+        task=task,
+        backend=backend,
+        max_workers=n_runs,
+        temperature=temperature
+    )
 
     outputs = []
     reachabilities = []
     all_logprobs = []
     output_lengths = []
 
-    for i in range(n_runs):
-        text, logprobs = _run_with_temperature(full_prompt, backend, temperature)
-        reachability = _compute_reachability(logprobs)
-
-        outputs.append(text)
-        reachabilities.append(reachability)
-        all_logprobs.append(logprobs)
-        output_lengths.append(len(text))
+    # process the parallel results
+    for i, r in enumerate(results):
+        if not r.text and not r.logprobs:
+            continue # Skip completely failed calls
+            
+        outputs.append(r.text)
+        output_lengths.append(len(r.text))
+        
+        if r.logprobs:
+            reachability = _compute_reachability(r.logprobs)
+            reachabilities.append(reachability)
+            all_logprobs.append(r.logprobs)
+        else:
+            reachabilities.append(0.5)
+            all_logprobs.append([])
 
         logger.info(
             f"stability run={i+1}/{n_runs} "
-            f"reachability={reachability:.4f} "
-            f"output_len={len(text)}"
+            f"reachability={reachabilities[-1]:.4f} "
+            f"output_len={len(r.text)}"
+        )
+
+    # Handle edge case where all runs failed
+    if not outputs:
+        return StabilityResult(
+            outputs=[""], avg_reachability=0.0, variance=0.0,
+            avg_similarity=0.0, stability_score=0.0, token_confidence=[],
+            recommendation="🔴 All stability runs failed. Check backend connection or prompt formatting."
         )
 
     avg_reachability = round(sum(reachabilities) / len(reachabilities), 4)
@@ -187,7 +96,7 @@ def analyze(
         sum((r - mean) ** 2 for r in reachabilities) / len(reachabilities), 6
     )
 
-    avg_similarity = _pairwise_similarity(outputs)
+    avg_similarity = pairwise_similarity(outputs)
 
     # Composite stability score
     normalized_variance = min(1.0, variance / 0.1)
@@ -200,15 +109,15 @@ def analyze(
 
     # Token confidence from first run - used for visualization
     token_confidence = []
-    if all_logprobs:
+    if all_logprobs and all_logprobs[0]:
         for entry in all_logprobs[0]:
-            chosen_prob = math.exp(entry["logprob"])
+            chosen_prob = math.exp(entry.get("logprob", -10.0))
             top_probs = [math.exp(t["logprob"]) for t in entry.get("top", [])]
             total = sum(top_probs) or chosen_prob
             certainty = round(chosen_prob / total, 4) if total > 0 else 0.5
             token_confidence.append(TokenConfidence(
-                token=entry["token"],
-                logprob=round(entry["logprob"], 4),
+                token=entry.get("token", ""),
+                logprob=round(entry.get("logprob", -10.0), 4),
                 certainty=certainty,
             ))
 
@@ -216,8 +125,6 @@ def analyze(
     if output_lengths:
         min_len = min(output_lengths)
         max_len = max(output_lengths)
-        # 3× ratio between shortest and longest output is a strong signal
-        # that the model is switching between terse and verbose response modes
         if min_len > 0 and max_len / min_len > 3.0:
             length_warning = (
                 f" ⚠️ Output length varied significantly across runs "

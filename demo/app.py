@@ -510,7 +510,7 @@ Run Reflective Prompt Optimization inside a LangGraph control loop. The LLM gene
             with gr.Row():
                 n_variants = gr.Slider(minimum=2, maximum=5, value=3, step=1, label="Variants per iteration")
                 target_score= gr.Slider(minimum=0.5, maximum=0.97, value=0.70, step=0.01, label="Target score")
-                max_iter = gr.Slider(minimum=1, maximum=5, value=3, step=1, label="Max graph iterations")
+                max_iter = gr.Slider(minimum=2, maximum=10, value=3, step=1, label="Max graph iterations")
 
             use_judge = gr.Checkbox(label="Enable LLM-as-judge scoring (slower, more accurate)", value=False)
             optimize_btn = gr.Button("⚡ Optimize Prompt", variant="primary")

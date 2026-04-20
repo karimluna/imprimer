@@ -149,11 +149,19 @@ def score(
             
     else:
         # Scenario D: Standard strict tasks (classify, extract, etc.)
-        # FIX: when expected_output is absent, use 0.5 (neutral) not 0.0.
         if expected_output:
-            similarity_score = _similarity(result.text, expected_output)
+            if task in {"classify", "extract"}:
+                # For strict tasks, embedding similarity is misleading.
+                norm_out = result.text.strip().lower()
+                norm_exp = expected_output.strip().lower()
+                # "Positive" vs "Affirmative" gets sim=0.3 in embeddings, but is functionally correct.
+                similarity_score = 1.0 if norm_exp in norm_out else 0.0
+                
+            else:
+                similarity_score = _similarity(result.text, expected_output)
         else:
             similarity_score = 0.5  # neutral: no reference, no penalty
+            
         quality_score = similarity_score
 
     # Consistent metric application

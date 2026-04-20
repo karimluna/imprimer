@@ -109,6 +109,7 @@ def optimize(
 
     initial_state: PromptState = {
         "task": task,
+        "run_id": "",                      # Satisfies the registry tracking
         "input_example": input_example,
         "expected_output": expected_output,
         "backend": backend_str,
@@ -117,6 +118,7 @@ def optimize(
         "base_prompt": base_prompt,
         "current_prompt": base_prompt,
         "current_iteration": 0,
+        "current_candidate_ssc": 0.0,      # Satisfies the generator's temporary score
         "last_feedback": "",
         "target_score": target_score,
         "max_iterations": max_iterations,
@@ -163,7 +165,9 @@ def optimize(
             "improvement": reach_improvement,
             "iterations_completed": final_state.get("current_iteration", 0),
             "target_reached": final_state.get("target_reached", False),
-            "feedback": final_state.get("last_feedback", "")
+            "feedback": final_state.get("last_feedback", ""),
+            "best_ssc": final_state.get("best_ssc", 0.0),
+            "logprobs_available": final_state.get("logprobs_available", True),
         }
         return
 
@@ -206,4 +210,6 @@ def optimize(
                         "iterations_completed": current_full_state.get("iterations_completed", 0),
                         "target_reached": current_full_state.get("target_reached", False),
                         "feedback": current_full_state.get("last_feedback", ""),
+                        "best_ssc": current_full_state.get("best_ssc", 0.0),
+                        "logprobs_available": current_full_state.get("logprobs_available", True),
                     }

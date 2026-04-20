@@ -5,6 +5,8 @@ from typing import TypedDict
 
 
 class PromptState(TypedDict):
+    run_id: str
+
     # Task definition, never changes across iterations
     task: str
     input_example: str
@@ -23,6 +25,7 @@ class PromptState(TypedDict):
     # Current state
     current_prompt: str        # decorated candidate for this cycle
     current_iteration: int
+    current_candidate_ssc: float
 
     # RPE feedback verbal explanation of why last iteration's best prompt won.
     last_feedback: str

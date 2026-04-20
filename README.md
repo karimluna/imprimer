@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">Imprimer: Control and Optimization for LLMs</h1>
+  <h2 align="center">Imprimer: Control and Optimization for LLMs</h2>
   <div>
     <p align="center">
       <img src="docs/assets/imprimer.drawio.png" height="190"/>

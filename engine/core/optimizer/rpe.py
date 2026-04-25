@@ -165,15 +165,15 @@ def _compute_ssc(
         if r.logprobs:
             reachabilities.append(_compute_reachability(r.logprobs))
         else:
-            reachabilities.append(0.5)  # Neutral fallback if no logprobs
+            reachabilities.append(0.6)  # Neutral fallback if no logprobs
 
     if not outputs:
-        return 0.0, 0.5, ""
+        return 0.0, 0.6, ""
 
     sample_output = outputs[0]
 
-    ssc = pairwise_similarity(outputs) if len(outputs) > 1 else 0.5
-    avg_reach = sum(reachabilities) / len(reachabilities) if reachabilities else 0.5
+    ssc = pairwise_similarity(outputs) if len(outputs) > 1 else 0.6
+    avg_reach = sum(reachabilities) / len(reachabilities) if reachabilities else 0.6
 
     return round(ssc, 4), round(avg_reach, 4), sample_output
 
@@ -230,7 +230,7 @@ def run_rpe(
     best_reachability = 0.5
     best_ssc = 0.5
 
-    # FIX: Parallelize the scoring of all variants simultaneously
+    # Parallelize the scoring of all variants simultaneously
     # Instead of a sequential `for variant in variants:` loop, we submit
     # all _compute_ssc calls to a thread pool.
 

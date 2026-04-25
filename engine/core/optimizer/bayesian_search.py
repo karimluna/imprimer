@@ -46,6 +46,7 @@ logger = get_logger(__name__)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 try:
+    # declared one time globally for each mutator class
     _nlp = spacy.load("en_core_web_sm")
 except OSError:
     logger.info("Downloading spaCy 'en_core_web_sm' model...")

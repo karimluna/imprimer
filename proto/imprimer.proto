@@ -55,9 +55,8 @@ message OptimizeRequest {
   string base_prompt     = 2;
   string input_example   = 3;
   string expected_output = 4;
-  int32  n_trials        = 5;
+  int32  n_variants      = 5;
   string backend         = 6;
-  bool   use_judge       = 7;    // optional flag to use a judge model for evaluation
   float target_reachability = 8; // stop when reachability >= this
   int32 max_iterations   = 9;    // max graph cycles, default 3
 }
@@ -69,9 +68,10 @@ message OptimizeResponse {
   float  baseline_score       = 4;
   float  baseline_reachability = 5;
   float  improvement          = 6; // gap
-  int32  trials_run           = 7; // how many trials we actually ran
   int32  iterations_completed  = 8; // how many graph cycles ran
   bool   target_reached       = 9; // did we hit reachability target?
+  string feedback             = 10;
+  float  grpo_group_mean      = 11;
 }
 
 

@@ -23,9 +23,8 @@ type optimizeRequest struct {
 	BasePrompt         string  `json:"base_prompt"`
 	InputExample       string  `json:"input_example"`
 	ExpectedOutput     string  `json:"expected_output"`
-	NTrials            int32   `json:"n_trials"`
-	Backend            string  `json:"backend"` // e.g. "ollama", "openai", "groq", etc.
-	UseJudge           bool    `json:"use_judge"`
+	NVariants          int32   `json:"n_variants"`
+	Backend            string  `json:"backend"`
 	TargetReachability float32 `json:"target_reachability"`
 	MaxIterations      int32   `json:"max_iterations"`
 }
@@ -37,9 +36,10 @@ type optimizeResponse struct {
 	BaselineScore        float32 `json:"baseline_score"`
 	BaselineReachability float32 `json:"baseline_reachability"`
 	Improvement          float32 `json:"improvement"`
-	TrialsRun            int32   `json:"trials_run"`
 	IterationsCompleted  int32   `json:"iterations_completed"`
 	TargetReached        bool    `json:"target_reached"`
+	Feedback             string  `json:"feedback"`
+	GRPOGroupMean        float32 `json:"grpo_group_mean"`
 }
 
 func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,10 +55,8 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if req.Task == "" ||
 		req.BasePrompt == "" ||
-		req.InputExample == "" ||
-		req.ExpectedOutput == "" ||
-		req.NTrials <= 0 {
-		httpx.WriteError(w, http.StatusBadRequest, "all fields must be filled and n_trials must be > 0")
+		req.NVariants <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "task and baseprompt must be filled and n_variants must be > 0")
 		return
 	}
 
@@ -72,9 +70,8 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		BasePrompt:         req.BasePrompt,
 		InputExample:       req.InputExample,
 		ExpectedOutput:     req.ExpectedOutput,
-		NTrials:            req.NTrials,
+		NVariants:          req.NVariants,
 		Backend:            req.Backend,
-		UseJudge:           req.UseJudge,
 		TargetReachability: req.TargetReachability,
 		MaxIterations:      req.MaxIterations,
 	})
@@ -93,8 +90,9 @@ func (h *OptimizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		BaselineScore:        grpcResp.BaselineScore,
 		BaselineReachability: grpcResp.BaselineReachability,
 		Improvement:          grpcResp.Improvement,
-		TrialsRun:            grpcResp.TrialsRun,
 		IterationsCompleted:  grpcResp.IterationsCompleted,
 		TargetReached:        grpcResp.TargetReached,
+		Feedback:             grpcResp.Feedback,
+		GRPOGroupMean:        grpcResp.GrpoGroupMean,
 	})
 }

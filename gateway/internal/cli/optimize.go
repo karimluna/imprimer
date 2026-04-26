@@ -12,9 +12,8 @@ type optimizePayload struct {
 	BasePrompt         string  `json:"base_prompt"`
 	InputExample       string  `json:"input_example"`
 	ExpectedOutput     string  `json:"expected_output"`
-	NTrials            int32   `json:"n_trials"`
+	NVariants          int32   `json:"n_variants"`
 	Backend            string  `json:"backend"`
-	UseJudge           bool    `json:"use_judge"`
 	TargetReachability float32 `json:"target_reachability"`
 	MaxIterations      int32   `json:"max_iterations"`
 }
@@ -26,9 +25,10 @@ type optimizeResult struct {
 	BaselineScore        float32 `json:"baseline_score"`
 	BaselineReachability float32 `json:"baseline_reachability"`
 	Improvement          float32 `json:"improvement"`
-	TrialsRun            int32   `json:"trials_run"`
 	IterationsCompleted  int32   `json:"iterations_completed"`
 	TargetReached        bool    `json:"target_reached"`
+	Feedback             string  `json:"feedback"`
+	GRPOGroupMean        float32 `json:"grpo_group_mean"`
 }
 
 var optimizeCmd = &cobra.Command{
@@ -50,19 +50,19 @@ typically converges within 8-10 trials after the initial random exploration.`,
 		prompt, _ := cmd.Flags().GetString("prompt")
 		input, _ := cmd.Flags().GetString("input")
 		expected, _ := cmd.Flags().GetString("expected")
-		trials, _ := cmd.Flags().GetInt32("trials")
+		variants, _ := cmd.Flags().GetInt32("variants")
 		backend, _ := cmd.Flags().GetString("backend")
 		targetReach, _ := cmd.Flags().GetFloat32("target-reachability")
 		maxIterations, _ := cmd.Flags().GetInt32("max-iterations")
 
 		if task == "" || prompt == "" {
-			return fmt.Errorf("--task, --prompt, --input, and --expected are all required")
+			return fmt.Errorf("--task are --prompt are required")
 		}
-		if trials <= 0 {
-			return fmt.Errorf("--trials must be greater than 0")
+		if variants <= 0 {
+			return fmt.Errorf("--variants must be greater than 0")
 		}
 
-		fmt.Printf("\n  Running %d optimization trials for task '%s'...\n", trials, task)
+		fmt.Printf("\n  Running %d optimization trials for task '%s'...\n", variants, task)
 		fmt.Printf("  Base prompt: %s\n\n", prompt)
 
 		c := NewImprimerClient(gatewayURL, apiKey)
@@ -73,7 +73,7 @@ typically converges within 8-10 trials after the initial random exploration.`,
 			BasePrompt:         prompt,
 			InputExample:       input,
 			ExpectedOutput:     expected,
-			NTrials:            trials,
+			NVariants:          variants,
 			Backend:            backend,
 			TargetReachability: targetReach,
 			MaxIterations:      maxIterations,
@@ -92,8 +92,8 @@ typically converges within 8-10 trials after the initial random exploration.`,
 		if result.Improvement < 0 {
 			sign = ""
 		}
-		fmt.Printf("  Trials run          %d (across %d iterations)\n",
-			result.TrialsRun, result.IterationsCompleted)
+		fmt.Printf("  GRPO Mean             %.4f (across %d iterations)\n",
+			result.GRPOGroupMean, result.IterationsCompleted)
 		fmt.Printf("  Target reached      %v\n", result.TargetReached)
 		fmt.Printf("  Baseline score      %.4f  (reachability %.4f)\n",
 			result.BaselineScore, result.BaselineReachability)
@@ -111,13 +111,12 @@ func init() {
 	optimizeCmd.Flags().String("prompt", "", "Base prompt template to optimize")
 	optimizeCmd.Flags().String("input", "", "Example input for evaluation")
 	optimizeCmd.Flags().String("expected", "", "Expected output for similarity scoring")
-	optimizeCmd.Flags().Int32("trials", 20, "Number of optimization trials")
+	optimizeCmd.Flags().Int32("variants", 4, "Number of variants to creat for Group Relative Optimization")
 	optimizeCmd.Flags().String("backend", "ollama", "Model backend: ollama or openai")
-	optimizeCmd.Flags().Bool("judge", false, "Enable LLM-as-judge scoring during optimization")
 	optimizeCmd.Flags().Float32("target-reachability", 0.80,
 		"Stop when reachability >= this value (paper ceiling: 0.97)")
 	optimizeCmd.Flags().Int32("max-iterations", 3,
-		"Max graph cycles (total LLM calls = trials × iterations)")
+		"Max graph cycles (total LLM calls = variants × iterations)")
 
 	RootCmd.AddCommand(optimizeCmd)
 }

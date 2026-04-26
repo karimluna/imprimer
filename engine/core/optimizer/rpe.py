@@ -1,9 +1,5 @@
 """
 Reflective Prompt Engineering helpers
-
-  _generate_variants_with_residual : LLM-driven generation with RiOT residual injection
-  extract_residual_content         : RiOT — structurally-aware constraint extraction
-  _compute_ssc                     : Semantic Self-Consistency (diagnostic, stability.py only)
 """
 
 import json
@@ -22,82 +18,40 @@ _SSC_TEMPERATURE = 0.8
 
 _MIN_PROMPT_LEN = 20
 
-_LABEL_PATTERNS = re.compile(
-    r"^(version\s*\d+|v\d+|prompt\s*\d+|option\s*\d+|variant\s*\d+|#\s*\d+|improved version)$",
-    re.IGNORECASE,
-)
-
-# Imperative verbs that open format/constraint instructions
-_IMPERATIVE_VERBS = frozenset({
-    "output", "return", "respond", "write", "give", "provide", "format",
-    "use", "keep", "limit", "start", "ensure", "include", "exclude",
-    "avoid", "do", "don't", "never", "always", "only", "omit", "strip",
-})
-
-# Negation markers
-_NEGATION = frozenset({"no", "not", "never", "don't", "do not", "avoid", "without", "except"})
-
-_SHORT_PROMPT_CHARS = 200
-_SHORT_PROMPT_LINES = 3
+_LABEL_PATTERN = re.compile(r"^\s*[\w'-]{1,20}(\s+[\w'-]{1,15}){0,2}\s*\d*\s*[.:]?\s*$")
 
 
 def _is_valid_prompt(text: str, anchor: str) -> bool:
-    stripped = text.strip()
+    s = text.strip()
     return (
-        len(stripped) >= _MIN_PROMPT_LEN
-        and not _LABEL_PATTERNS.match(stripped)
-        and stripped != anchor.strip()
+        len(s) >= _MIN_PROMPT_LEN
+        and s != anchor.strip()
+        and not s.endswith(":")          # preamble header in any language
+        and not _LABEL_PATTERN.match(s)  # "version 3", "versión 3", "Version 3"
     )
 
-
 def _is_constraint_line(line: str) -> bool:
-    """
-    Structural detection of lines worth preserving as residual constraints.
-
-    A line is a constraint if it:
-      - Starts with an imperative/format verb (output, return, only, never…)
-      - Contains a negation marker (no, not, never, avoid…)
-      - Contains a colon with short text on the left (format spec: "Label: …")
-      - Is short and sentence-like (< 120 chars) — avoids grabbing prose
-
-    This replaces the keyword frozenset: "Limit your answer to the label."
-    now matches (starts with "Limit" → imperative verb family, < 120 chars).
-    """
     s = line.strip()
     if not s or len(s) > 120:
         return False
-
-    lower = s.lower()
-    first_word = lower.split()[0].rstrip(".,:")
-
-    if first_word in _IMPERATIVE_VERBS:
+    if ":" in s and s.index(":") < 40:  # "Output: label" / "Salida: etiqueta"
         return True
-    if any(neg in lower for neg in _NEGATION):
+    words = s.split()
+    if 3 <= len(words) <= 15 and s[-1] in ".!":  # short complete sentence
         return True
-    if ":" in s and s.index(":") < 30:   # "Output: just the label"
-        return True
-
     return False
+
 
 
 def extract_residual_content(prompt: str) -> str:
     """
     RiOT residual extractor.
-
-    Short prompts (≤ _SHORT_PROMPT_CHARS or ≤ _SHORT_PROMPT_LINES) are returned
-    whole — for small-model outputs that ARE a single constraint sentence.
-
-    Long prompts: structurally scanned for imperative/negative/format lines.
     """
     stripped = prompt.strip()
     if not stripped:
         return ""
 
     lines = [l.strip() for l in stripped.splitlines() if l.strip()]
-
-    if len(stripped) <= _SHORT_PROMPT_CHARS or len(lines) <= _SHORT_PROMPT_LINES:
-        logger.debug(f"riot residual: short prompt ({len(stripped)} chars) — full prompt")
-        return stripped
 
     residual = [l for l in lines if _is_constraint_line(l)]
     logger.debug(f"riot residual: extracted {len(residual)}/{len(lines)} constraint lines")
@@ -140,8 +94,9 @@ def _generate_variants_with_residual(
         f"Write {n_variants} improved versions. Each must:\n"
         f"- Keep {{input}} exactly as written\n"
         f"- Change only wording, tone, or instruction style (one change per version)\n"
-        f"- Be a complete, usable instruction (not a label or placeholder)\n\n"
-        f"Output ONLY a valid JSON array of {n_variants} strings. No other text."
+        f"- Be a complete, usable instruction\n\n"
+        f"Respond with ONLY a JSON array, no other text. Example format:\n"
+        f'["improved prompt 1", "improved prompt 2"]'
     )
 
     raw = ""
@@ -150,7 +105,7 @@ def _generate_variants_with_residual(
             prompt_text=generation_prompt,
             backend=backend,
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=600,
         )
 
         cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
@@ -166,21 +121,15 @@ def _generate_variants_with_residual(
             except json.JSONDecodeError:
                 pass
 
-        quoted = re.findall(r'"([^"]{10,})"', cleaned)
+        # Quoted fallback: handles models that write "prompt" instead of JSON
+        quoted = re.findall(r'"([^"]{20,})"', cleaned)
         valid  = [v.strip() for v in quoted if _is_valid_prompt(v, anchor)]
         if valid:
             logger.info(f"rpe: {len(valid)} variants (quoted fallback)")
             return valid[:n_variants]
 
-        lines = [
-            l.strip().lstrip("0123456789.-) ")
-            for l in cleaned.splitlines()
-            if len(l.strip()) > 15
-        ]
-        valid = [l for l in lines if _is_valid_prompt(l, anchor)]
-        if valid:
-            logger.info(f"rpe: {len(valid)} variants (line fallback)")
-            return valid[:n_variants]
+        # Line fallback removed: it was picking up the generator's own preamble
+        # sentences ("Here are four improved versions...") as prompt candidates.
 
     except Exception as exc:
         logger.warning(f"variant generation failed: {exc} — returning anchor")

@@ -194,7 +194,7 @@ Every request passes through the security layer before any LLM interaction: prom
 - **Fine-tuning escalation**: LoRA trigger when the optimizer plateaus on complex tasks  
 - **Model routing**: automatic cascade to a larger model when reachability is consistently low across cycles
 
----
+
 
 ## References
 

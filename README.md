@@ -54,7 +54,7 @@ where $\bar{s}$ is the mean score of the current candidate group. The group mean
 Across optimization cycles a prompt can undergo semantic drift, improvements to one aspect inadvertently overwrite constraints that were already working. Imprimer implements the **text residual connection** from RiOT (2025): after each cycle, structural constraints proven in the winning prompt (format rules, persona anchors, output specifications) are extracted and injected into the next generation prompt, preventing the optimizer from forgetting what already works.
 
 <p align="center">
-  <img src="docs/assets/llmcontrol.drawio.png" height="240" alt="Control framework"/>
+  <img src="docs/assets/llmcontrol.png" height="240" alt="Control framework"/>
 </p>
 
 

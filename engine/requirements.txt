@@ -13,4 +13,4 @@ sentence-transformers>=5.4.1
 gradio>=6.12.0
 dotenv>=0.9.9
 pytest>=9.0.3
-psycopg2>=9.12
+psycopg2>=2.9.12

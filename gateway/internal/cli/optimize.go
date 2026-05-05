@@ -182,8 +182,8 @@ and feeds verbal reflection back into the next cycle.`,
 			[2]string{"Original", "Optimized"},
 			[][2]string{
 				{
-					ui.Prompt(truncate(prompt, 60)),
-					ui.Prompt(truncate(result.BestPrompt, 60)),
+					ui.Prompt(truncate(prompt, 120)),
+					ui.Prompt(truncate(result.BestPrompt, 120)),
 				},
 			},
 		)))

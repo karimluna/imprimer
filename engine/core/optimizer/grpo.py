@@ -21,7 +21,7 @@ from utils.create_logger import get_logger
 logger = get_logger(__name__)
 
 GRPO_STEEP = 3.0
-N_VARIANTS = 4       # Fix 3: group of 4 gives stable group-mean baseline
+N_VARIANTS = 4       
 
 
 @dataclass

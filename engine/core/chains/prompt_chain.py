@@ -63,7 +63,7 @@ def _build_chat_client(
             base_url=f"{base}/v1",
             api_key="ollama",
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             **logprob_kwargs,
         )
 
@@ -72,7 +72,7 @@ def _build_chat_client(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             **logprob_kwargs,
         )
 
@@ -141,7 +141,7 @@ def run_variant(
         llm = _build_chat_client(
             backend,
             model_env_var="OLLAMA_MODEL",
-            default_model="llama3.2:latest",
+            default_model="llama3.2:1b",
             temperature=temperature,
             max_tokens=max_tokens,
             with_logprobs=True,
@@ -205,7 +205,7 @@ def call_llm(
         llm = _build_chat_client(
             backend,
             model_env_var="GENERATOR_MODEL",
-            default_model="llama3.2:latest",
+            default_model="llama3.2:1b",
             temperature=temperature,
             max_tokens=max_tokens,
             with_logprobs=False,

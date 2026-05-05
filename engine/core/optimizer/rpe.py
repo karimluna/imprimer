@@ -72,7 +72,7 @@ def _generate_variants_with_residual(
       1. Strict JSON array
       2. Quoted-string extraction
       3. Non-empty line fallback
-      4. [anchor] on total failure — loop never crashes
+      4. [anchor] on total failure, loop never crashes
     """
     anchor = current_best_prompt or base_prompt
 

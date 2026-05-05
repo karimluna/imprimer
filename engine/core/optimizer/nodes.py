@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.optimizer.state import PromptState
 from core.optimizer.grpo import run_grpo
 from core.optimizer.rpe import extract_residual_content
-from core.chains.prompt_chain import ModelBackend, run_variant
+from core.chains.prompt_chain import ModelBackend, run_variant, call_llm
 from core.evaluator.scorer import rank_score
 from utils.create_logger import get_logger
 
@@ -34,8 +34,43 @@ def _structured_diff(previous: str, current: str) -> str:
     return ". ".join(parts) + "."
 
 
-def _judge(previous: str, current: str) -> str:
-    ...
+
+def _judge(
+    previous_prompt: str, 
+    current_prompt: str, 
+    task: str, 
+    backend: ModelBackend,
+    is_improvement: bool
+) -> str:
+    """
+    Uses the Generator LLM to reflect on semantic changes and provide actionable advice.
+    Provides a rich text 'gradient' for the next optimizer cycle.
+    """
+    direction = "improved" if is_improvement else "degraded"
+    
+    sys_prompt = f"""You are an expert prompt engineer optimizing a prompt for a '{task}' task.
+We just tested a new prompt variant. The performance {direction}.
+
+[Previous Best Prompt]: {previous_prompt}
+[New Prompt Tested]: {current_prompt}
+
+Analyze the semantic difference. In ONE concise sentence, explain why the new prompt {direction} performance.
+In a SECOND concise sentence, give a direct, actionable instruction for the next iteration to improve it further.
+Do not use pleasantries. Keep it extremely brief."""
+
+    try:
+        # We use call_llm (the generator model) because evaluation/reflection requires higher reasoning
+        reflection = call_llm(
+            prompt_text=sys_prompt,
+            backend=backend,
+            temperature=0.3, # Low temp for analytical reflection
+            max_tokens=150
+        )
+        return reflection.strip()
+    except Exception as exc:
+        logger.error(f"Judge reflection failed: {exc}")
+        # Fallback to the dumb diff if the API hiccups, so we don't crash the graph
+        return _structured_diff(previous_prompt, current_prompt)
 
 
 def _score_across_examples(
@@ -137,6 +172,8 @@ def evaluator_node(state: PromptState) -> dict:
     backend   = ModelBackend(state["backend"])
     iteration = state["current_iteration"]
 
+    old_best_prompt = state.get("best_prompt", state["base_prompt"])
+
     extra_examples = state.get("extra_examples", [])
 
     avg_reach, avg_quality, avg_combined = _score_across_examples(
@@ -193,11 +230,17 @@ def evaluator_node(state: PromptState) -> dict:
             f"prompt={state['current_prompt'][:60]!r}"
         )
 
-    # sstructured diff instead of LLM reflection now is 0 model calls
-    if state["current_prompt"] != state["base_prompt"]:
-        feedback = _structured_diff(state["best_prompt"], state["current_prompt"])
+    # run judge
+    if state["current_prompt"] != old_best_prompt:
+        feedback = _judge(
+            previous_prompt=old_best_prompt,
+            current_prompt=state["current_prompt"],
+            task=state["task"],
+            backend=backend,
+            is_improvement=is_new_best
+        )
         updates["last_feedback"] = feedback
-        logger.info(f"feedback (diff): {feedback[:120]!r}")
+        logger.info(f"feedback (judge): {feedback[:120]!r}")
 
     return updates
 

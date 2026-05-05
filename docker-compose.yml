@@ -11,15 +11,12 @@ services:
     env_file:
       - .env
     environment:
-      - USE_POSTGRES=true
+      - USE_POSTGRES=false
       - POSTGRES_HOST=db
 
     volumes:
       - engine_data:/app/data
       - engine_logs:/app/logs
-    depends_on:
-      db:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import grpc; print('ok')"]

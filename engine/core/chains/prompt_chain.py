@@ -205,7 +205,7 @@ def call_llm(
         llm = _build_chat_client(
             backend,
             model_env_var="GENERATOR_MODEL",
-            default_model="llama3.2:1b",
+            default_model="qwen2.5:1.5b",
             temperature=temperature,
             max_tokens=max_tokens,
             with_logprobs=False,
